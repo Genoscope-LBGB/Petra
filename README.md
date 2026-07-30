@@ -1,5 +1,5 @@
 # petra
-
+$
 PETRA - Predicted protein-enabled Taxonomic Rank Assignment
 
 ## Installation
