@@ -71,7 +71,8 @@ def main(
     context_settings=_RUN_CONTEXT,
     epilog=(
         "Targets and advanced Snakemake options follow '--'. Example: "
-        "petra run --output run-1 -- --targets hello"
+        "petra run --assembly assembly.fasta --output run-1 -- "
+        "--targets pyrodigal"
     ),
 )
 def run(
@@ -86,15 +87,18 @@ def run(
             rich_help_panel="Execution",
         ),
     ],
-    message: Annotated[
-        str,
+    assembly: Annotated[
+        Path,
         typer.Option(
-            "--message",
-            help="Text written by the starter workflow.",
-            rich_help_panel="Workflow options",
-            show_default=True,
+            "--assembly",
+            "-i",
+            help="Assembled nucleotide FASTA to process.",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            rich_help_panel="Inputs",
         ),
-    ] = "Hello from petra",
+    ],
     profile: Annotated[
         str,
         typer.Option(
@@ -114,10 +118,8 @@ def run(
     ] = "slurm",
 ) -> None:
     """Run the complete workflow unless Snakemake targets are passed after '--'."""
-    profile_source = context.get_parameter_source("profile")
-
     workflow_config = {
-        "message": message,
+        "assembly": assembly,
     }
     try:
         exit_code = launch_workflow(

@@ -1,6 +1,6 @@
-include: "rules/hello.smk"
+include: "rules/pyrodigal.smk"
 
 
 rule all:
     input:
-        "results/message.txt"
+        "predictions.gff"

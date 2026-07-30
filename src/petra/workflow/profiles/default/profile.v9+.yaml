@@ -1,2 +1,9 @@
 executor: slurm
 jobs: 100
+
+set-threads:
+  pyrodigal: 12
+
+set-resources:
+  pyrodigal:
+    runtime: 720
