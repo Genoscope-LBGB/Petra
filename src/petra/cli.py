@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.table import Table
 
+from .database import DatabaseBuildError, build_diamond_database
 from .launcher import LauncherError, launch_workflow, profile_summaries
 
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
@@ -22,6 +25,20 @@ app = typer.Typer(
 )
 console = Console()
 
+
+def _configure_logging() -> None:
+    petra_logger = logging.getLogger("petra")
+    if not petra_logger.handlers:
+        handler = RichHandler(
+            console=console,
+            show_time=False,
+            show_path=False,
+            markup=False,
+        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        petra_logger.addHandler(handler)
+    petra_logger.setLevel(logging.INFO)
+    petra_logger.propagate = False
 
 def _version_callback(value: bool) -> None:
     if value:
@@ -46,6 +63,7 @@ def main(
     ] = None,
 ) -> None:
     """PETRA - Predicted protein-enabled Taxonomic Rank Assignment"""
+    _configure_logging()
 
 
 @app.command(
@@ -86,14 +104,6 @@ def run(
             show_default=True,
         ),
     ] = "default",
-    no_profile: Annotated[
-        bool,
-        typer.Option(
-            "--no-profile",
-            help="Disable the packaged default workflow profile.",
-            rich_help_panel="Execution",
-        ),
-    ] = False,
     executor: Annotated[
         str | None,
         typer.Option(
@@ -101,55 +111,10 @@ def run(
             help="Override the selected profile's executor.",
             rich_help_panel="Execution",
         ),
-    ] = None,
-    jobs: Annotated[
-        int | None,
-        typer.Option(
-            "--jobs",
-            min=1,
-            help="Override the selected profile's concurrent-job limit.",
-            rich_help_panel="Execution",
-        ),
-    ] = None,
-    cores: Annotated[
-        int | None,
-        typer.Option(
-            "--cores",
-            min=1,
-            help="Override the selected profile's core limit.",
-            rich_help_panel="Execution",
-        ),
-    ] = None,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run",
-            help="Plan jobs without executing them.",
-            rich_help_panel="Execution",
-        ),
-    ] = False,
-    use_conda: Annotated[
-        bool,
-        typer.Option(
-            "--use-conda",
-            help="Enable Snakemake's Conda deployment method.",
-            rich_help_panel="Software deployment",
-        ),
-    ] = False,
-    use_apptainer: Annotated[
-        bool,
-        typer.Option(
-            "--use-apptainer",
-            help="Enable Snakemake's Apptainer deployment method.",
-            rich_help_panel="Software deployment",
-        ),
-    ] = False,
+    ] = "slurm",
 ) -> None:
     """Run the complete workflow unless Snakemake targets are passed after '--'."""
     profile_source = context.get_parameter_source("profile")
-    if no_profile and profile_source is not None and profile_source.name == "COMMANDLINE":
-        typer.echo("Error: --profile and --no-profile are mutually exclusive.", err=True)
-        raise typer.Exit(code=2)
 
     workflow_config = {
         "message": message,
@@ -159,13 +124,8 @@ def run(
             distribution_name="petra",
             output=output,
             workflow_config=workflow_config,
-            profile=None if no_profile else profile,
+            profile=profile,
             executor=executor,
-            jobs=jobs,
-            cores=cores,
-            dry_run=dry_run,
-            use_conda=use_conda,
-            use_apptainer=use_apptainer,
             passthrough=context.args,
             console=console,
         )
@@ -174,6 +134,52 @@ def run(
         raise typer.Exit(code=1) from error
 
     raise typer.Exit(code=exit_code)
+
+
+@app.command("build-db", context_settings=_HELP_CONTEXT)
+def build_db(
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Directory in which to create petra.dmnd.",
+            file_okay=False,
+            rich_help_panel="Output",
+        ),
+    ],
+    fasta: Annotated[
+        Path | None,
+        typer.Option(
+            "--fasta",
+            help="Protein FASTA input. Downloads NCBI NR when omitted.",
+            dir_okay=False,
+            rich_help_panel="Inputs",
+        ),
+    ] = None,
+    taxon_map: Annotated[
+        Path | None,
+        typer.Option(
+            "--taxon-map",
+            help=(
+                "NCBI protein accession-to-taxon map. Downloads the full map "
+                "when omitted."
+            ),
+            dir_okay=False,
+            rich_help_panel="Inputs",
+        ),
+    ] = None,
+) -> None:
+    """Build a taxonomy-aware DIAMOND database."""
+    try:
+        build_diamond_database(
+            fasta=fasta,
+            taxon_map=taxon_map,
+            output=output,
+        )
+    except DatabaseBuildError as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=1) from error
 
 
 @app.command("profiles", context_settings=_HELP_CONTEXT)

@@ -138,11 +138,6 @@ def launch_workflow(
     workflow_config: Mapping[str, Any],
     profile: str | None,
     executor: str | None,
-    jobs: int | None,
-    cores: int | None,
-    dry_run: bool,
-    use_conda: bool,
-    use_apptainer: bool,
     passthrough: Sequence[str],
     console: Console | None = None,
 ) -> int:
@@ -162,11 +157,6 @@ def launch_workflow(
         resolve_workflow_profile(profile, invocation_directory=invocation_directory)
         if profile is not None
         else None
-    )
-    effective_cores = (
-        1
-        if executor == "local" and cores is None and selected_profile is None
-        else cores
     )
     normalized_workflow_config = normalize_config(
         workflow_config,
@@ -206,11 +196,6 @@ def launch_workflow(
             else None
         ),
         "executor": executor,
-        "jobs": jobs,
-        "cores": effective_cores,
-        "dry_run": dry_run,
-        "use_conda": use_conda,
-        "use_apptainer": use_apptainer,
         "printshellcmds": True,
         "skip_script_cleanup": True,
     }
@@ -221,11 +206,6 @@ def launch_workflow(
         config_path=config_path,
         profile=selected_profile,
         executor=executor,
-        jobs=jobs,
-        cores=effective_cores,
-        dry_run=dry_run,
-        use_conda=use_conda,
-        use_apptainer=use_apptainer,
     )
     output_console = console or Console()
     output_console.print(
@@ -438,11 +418,6 @@ def _wrapper_arguments(
     config_path: Path,
     profile: WorkflowProfile | None,
     executor: str | None,
-    jobs: int | None,
-    cores: int | None,
-    dry_run: bool,
-    use_conda: bool,
-    use_apptainer: bool,
 ) -> list[str]:
     arguments = [
         _snakemake_executable(),
@@ -459,17 +434,4 @@ def _wrapper_arguments(
         arguments.extend(["--workflow-profile", "none"])
     if executor is not None:
         arguments.extend(["--executor", executor])
-    if jobs is not None:
-        arguments.extend(["--jobs", str(jobs)])
-    if cores is not None:
-        arguments.extend(["--cores", str(cores)])
-    if dry_run:
-        arguments.append("--dry-run")
-    deployment_methods = []
-    if use_conda:
-        deployment_methods.append("conda")
-    if use_apptainer:
-        deployment_methods.append("apptainer")
-    if deployment_methods:
-        arguments.extend(["--software-deployment-method", *deployment_methods])
     return arguments
