@@ -1,3 +1,6 @@
+import traceback
+from contextlib import redirect_stderr, redirect_stdout
+
 from pathlib import Path
 from typing import TextIO
 
@@ -56,8 +59,15 @@ def filter_fasta(source: Path, destination: Path, maximum: int) -> None:
         )
 
 
-filter_fasta(
-    Path(snakemake.input.proteins),
-    Path(snakemake.output.proteins),
-    int(snakemake.params.maximum),
-)
+log_path = Path(snakemake.log[0])
+with log_path.open("w", encoding="utf-8") as log_handle:
+    with redirect_stdout(log_handle), redirect_stderr(log_handle):
+        try:
+            filter_fasta(
+                Path(snakemake.input.proteins),
+                Path(snakemake.output.proteins),
+                int(snakemake.params.maximum),
+            )
+        except Exception:
+            traceback.print_exc()
+            raise

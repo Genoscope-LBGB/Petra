@@ -11,9 +11,12 @@ rule pyrodigal:
         proteins=temp("predictions.faa")
     benchmark:
         "benchmarks/pyrodigal.tsv"
+    log:
+        "logs/pyrodigal.log"
     shell:
         "pyrodigal -m -c -f gff -p meta -j {threads} "
-        "-i {input.assembly:q} -o {output.gff:q} -a {output.proteins:q}"
+        "-i {input.assembly:q} -o {output.gff:q} -a {output.proteins:q} "
+        "> {log:q} 2>&1"
 
 rule segmasker:
     """Mask low-complexity regions in the predicted protein sequences."""
@@ -23,9 +26,11 @@ rule segmasker:
         proteins=temp("predictions.masked.faa")
     benchmark:
         "benchmarks/segmasker.tsv"
+    log:
+        "logs/segmasker.log"
     shell:
         "segmasker -in {input.proteins:q} -out {output.proteins:q} "
-        "-outfmt fasta"
+        "-outfmt fasta > {log:q} 2>&1"
 
 rule filter_low_complexity:
     """Discard proteins exceeding the configured low-complexity threshold."""
@@ -37,6 +42,8 @@ rule filter_low_complexity:
         maximum=config["max_low_complexity"]
     benchmark:
         "benchmarks/filter_low_complexity.tsv"
+    log:
+        "logs/filter_low_complexity.log"
     script:
         "../scripts/filter_low_complexity.py"
 
@@ -50,5 +57,7 @@ rule cdhit:
         maximum=config["max_clusters_per_sequence"]
     benchmark:
         "benchmarks/cdhit.tsv"
+    log:
+        "logs/cdhit.log"
     script:
         "../scripts/cluster_proteins.py"

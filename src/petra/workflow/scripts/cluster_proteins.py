@@ -1,3 +1,6 @@
+import traceback
+from contextlib import redirect_stderr, redirect_stdout
+
 import hashlib
 import random
 import subprocess
@@ -165,6 +168,7 @@ def cluster_proteins(
     workers: int,
     max_clusters: int,
     runner: Callable[[ProteinGroup], Path] = _run_cdhit,
+    log: TextIO | None = None,
 ) -> None:
     if workers < 1:
         raise ValueError("CD-HIT worker count must be positive.")
@@ -181,6 +185,15 @@ def cluster_proteins(
                 for group, clustered in zip(
                     batch, clustered_outputs, strict=True
                 ):
+                    if log is not None and group.log.is_file():
+                        log.write(
+                            f"== Assembly sequence {group.sequence_id} ==\n"
+                        )
+                        with group.log.open(encoding="utf-8") as group_log:
+                            for line in group_log:
+                                log.write(line)
+                        log.write("\n")
+                        log.flush()
                     _sample_clusters(
                         clustered,
                         output_handle,
@@ -190,9 +203,17 @@ def cluster_proteins(
 
 
 if "snakemake" in globals():
-    cluster_proteins(
-        Path(snakemake.input.proteins),
-        Path(snakemake.output.proteins),
-        int(snakemake.threads),
-        int(snakemake.params.maximum),
-    )
+    log_path = Path(snakemake.log[0])
+    with log_path.open("w", encoding="utf-8") as log_handle:
+        with redirect_stdout(log_handle), redirect_stderr(log_handle):
+            try:
+                cluster_proteins(
+                    Path(snakemake.input.proteins),
+                    Path(snakemake.output.proteins),
+                    int(snakemake.threads),
+                    int(snakemake.params.maximum),
+                    log=log_handle,
+                )
+            except Exception:
+                traceback.print_exc()
+                raise
