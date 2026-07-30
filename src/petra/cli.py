@@ -99,6 +99,19 @@ def run(
             rich_help_panel="Inputs",
         ),
     ],
+    max_low_complexity: Annotated[
+        int,
+        typer.Option(
+            "--max-low-complexity",
+            min=0,
+            help=(
+                "Maximum number of low-complexity amino-acid residues allowed "
+                "per predicted protein."
+            ),
+            rich_help_panel="Gene prediction",
+            show_default=True,
+        ),
+    ] = 100,
     profile: Annotated[
         str,
         typer.Option(
@@ -120,6 +133,7 @@ def run(
     """Run the complete workflow unless Snakemake targets are passed after '--'."""
     workflow_config = {
         "assembly": assembly,
+        "max_low_complexity": max_low_complexity,
     }
     try:
         exit_code = launch_workflow(

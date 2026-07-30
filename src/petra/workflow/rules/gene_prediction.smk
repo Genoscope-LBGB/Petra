@@ -22,3 +22,14 @@ rule segmasker:
     shell:
         "segmasker -in {input.proteins:q} -out {output.proteins:q} "
         "-outfmt fasta"
+
+rule filter_low_complexity:
+    """Discard proteins exceeding the configured low-complexity threshold."""
+    input:
+        proteins="predictions.masked.faa"
+    output:
+        proteins=temp("predictions.filtered.faa")
+    params:
+        maximum=config["max_low_complexity"]
+    script:
+        "../scripts/filter_low_complexity.py"

@@ -4,4 +4,4 @@ include: "rules/gene_prediction.smk"
 rule all:
     input:
         "predictions.gff",
-        "predictions.masked.faa"
+        "predictions.filtered.faa"

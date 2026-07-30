@@ -11,3 +11,6 @@ set-resources:
   segmasker:
     runtime: 240
     mem_mb: 10000
+  filter_low_complexity:
+    runtime: 60
+    mem_mb: 10000
