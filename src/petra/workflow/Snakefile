@@ -1,0 +1,6 @@
+include: "rules/hello.smk"
+
+
+rule all:
+    input:
+        "results/message.txt"
