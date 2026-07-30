@@ -207,16 +207,7 @@ def launch_workflow(
         profile=selected_profile,
         executor=executor,
     )
-    output_console = console or Console()
-    output_console.print(
-        f"Snakemake command: {shlex.join(wrapper_arguments)}",
-        markup=False,
-    )
-    if passthrough:
-        output_console.print(
-            f"{len(passthrough)} passthrough argument(s) omitted from display.",
-            style="dim",
-        )
+    print(f"Snakemake command: {shlex.join(wrapper_arguments)}")
 
     try:
         process = subprocess.run(
