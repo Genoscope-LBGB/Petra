@@ -1,5 +1,6 @@
 executor: slurm
 jobs: 100
+cores: 4000
 
 set-threads:
   pyrodigal: 12
