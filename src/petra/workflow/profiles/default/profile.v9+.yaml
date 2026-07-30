@@ -7,3 +7,7 @@ set-threads:
 set-resources:
   pyrodigal:
     runtime: 720
+    mem_mb: 128000
+  segmasker:
+    runtime: 240
+    mem_mb: 10000

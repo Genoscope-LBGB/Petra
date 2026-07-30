@@ -7,8 +7,18 @@ rule pyrodigal:
     input:
         assembly=config["assembly"]
     output:
-        gff="predictions.gff",
-        proteins="predictions.faa"
+        gff=temp("predictions.gff"),
+        proteins=temp("predictions.faa")
     shell:
         "pyrodigal -m -c -f gff -p meta -j {threads} "
         "-i {input.assembly:q} -o {output.gff:q} -a {output.proteins:q}"
+
+rule segmasker:
+    """Mask low-complexity regions in the predicted protein sequences."""
+    input:
+        proteins="predictions.faa"
+    output:
+        proteins=temp("predictions.masked.faa")
+    shell:
+        "segmasker -in {input.proteins:q} -out {output.proteins:q} "
+        "-outfmt fasta"

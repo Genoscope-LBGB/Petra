@@ -1,7 +1,7 @@
-include: "rules/pyrodigal.smk"
+include: "rules/gene_prediction.smk"
 
 
 rule all:
     input:
         "predictions.gff",
-        "predictions.faa"
+        "predictions.masked.faa"
