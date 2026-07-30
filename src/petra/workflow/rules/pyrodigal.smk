@@ -7,7 +7,8 @@ rule pyrodigal:
     input:
         assembly=config["assembly"]
     output:
-        "predictions.gff"
+        gff="predictions.gff",
+        proteins="predictions.faa"
     shell:
         "pyrodigal -m -c -f gff -p meta -j {threads} "
-        "-i {input.assembly:q} -o {output:q}"
+        "-i {input.assembly:q} -o {output.gff:q} -a {output.proteins:q}"

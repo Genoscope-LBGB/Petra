@@ -3,4 +3,5 @@ include: "rules/pyrodigal.smk"
 
 rule all:
     input:
-        "predictions.gff"
+        "predictions.gff",
+        "predictions.faa"
