@@ -3,6 +3,7 @@ jobs: 100
 
 set-threads:
   pyrodigal: 12
+  cdhit: 12
 
 set-resources:
   pyrodigal:
@@ -14,3 +15,6 @@ set-resources:
   filter_low_complexity:
     runtime: 60
     mem_mb: 10000
+  cdhit:
+    runtime: 720
+    mem_mb: 24000

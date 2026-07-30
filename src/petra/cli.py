@@ -112,6 +112,19 @@ def run(
             show_default=True,
         ),
     ] = 100,
+    max_clusters_per_sequence: Annotated[
+        int,
+        typer.Option(
+            "--max-clusters",
+            min=1,
+            help=(
+                "Maximum number of protein clusters retained per input "
+                "assembly sequence."
+            ),
+            rich_help_panel="Gene prediction",
+            show_default=True,
+        ),
+    ] = 1000,
     profile: Annotated[
         str,
         typer.Option(
@@ -134,6 +147,7 @@ def run(
     workflow_config = {
         "assembly": assembly,
         "max_low_complexity": max_low_complexity,
+        "max_clusters_per_sequence": max_clusters_per_sequence,
     }
     try:
         exit_code = launch_workflow(

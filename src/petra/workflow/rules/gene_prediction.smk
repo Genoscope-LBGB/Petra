@@ -33,3 +33,14 @@ rule filter_low_complexity:
         maximum=config["max_low_complexity"]
     script:
         "../scripts/filter_low_complexity.py"
+
+rule cdhit:
+    """Cluster proteins independently within each originating assembly sequence and output at most ``max_clusters`` per assembly sequence."""
+    input:
+        proteins="predictions.filtered.faa"
+    output:
+        proteins=temp("predictions.clustered.faa")
+    params:
+        maximum=config["max_clusters_per_sequence"]
+    script:
+        "../scripts/cluster_proteins.py"
