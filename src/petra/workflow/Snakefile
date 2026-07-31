@@ -1,7 +1,8 @@
 include: "rules/gene_prediction.smk"
+include: "rules/diamond.snk"
 
 
 rule all:
     input:
         "predictions.gff",
-        "predictions.clustered.faa"
+        "predictions.diamond.tsv"

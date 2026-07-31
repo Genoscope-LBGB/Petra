@@ -5,6 +5,7 @@ cores: 4000
 set-threads:
   pyrodigal: 12
   cdhit: 12
+  diamond: 12
 
 set-resources:
   pyrodigal:
@@ -19,3 +20,6 @@ set-resources:
   cdhit:
     runtime: 720
     mem_mb: 24000
+  diamond:
+    runtime: 1440
+    mem_mb: 128000

@@ -71,8 +71,8 @@ def main(
     context_settings=_RUN_CONTEXT,
     epilog=(
         "Targets and advanced Snakemake options follow '--'. Example: "
-        "petra run --assembly assembly.fasta --output run-1 -- "
-        "--targets pyrodigal"
+        "petra run --assembly assembly.fasta --diamond-db database/petra.dmnd "
+        "--output run-1 -- --targets pyrodigal"
     ),
 )
 def run(
@@ -93,6 +93,17 @@ def run(
             "--assembly",
             "-i",
             help="Assembled nucleotide FASTA to process.",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            rich_help_panel="Inputs",
+        ),
+    ],
+    diamond_db: Annotated[
+        Path,
+        typer.Option(
+            "--diamond-db",
+            help="Taxonomy-aware DIAMOND database used for protein alignment.",
             exists=True,
             dir_okay=False,
             readable=True,
@@ -146,6 +157,7 @@ def run(
     """Run the complete workflow unless Snakemake targets are passed after '--'."""
     workflow_config = {
         "assembly": assembly,
+        "diamond_db": diamond_db,
         "max_low_complexity": max_low_complexity,
         "max_clusters_per_sequence": max_clusters_per_sequence,
     }
