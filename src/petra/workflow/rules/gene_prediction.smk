@@ -52,7 +52,11 @@ rule filter_low_complexity:
 
 
 rule cdhit:
-    """Cluster proteins independently within each originating assembly sequence and output at most ``max_clusters`` per assembly sequence."""
+    """
+    Cluster proteins independently within each originating assembly sequence and 
+    output at most ``max_clusters`` per assembly sequence.
+    
+    """
     input:
         proteins="predictions.filtered.faa",
     output:
