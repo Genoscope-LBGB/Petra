@@ -70,7 +70,7 @@ rule assign_taxonomy:
         proteins="predictions.clustered.faa",
         alignment="predictions.diamond.lineages.tsv",
     output:
-        taxonomy="predictions.taxonomy.tsv",
+        taxonomy="predictions.taxonomy.raw.tsv",
     log:
         "logs/assign_taxonomy.log",
     benchmark:
