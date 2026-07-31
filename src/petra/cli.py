@@ -127,6 +127,19 @@ def run(
             show_default=True,
         ),
     ] = 1000,
+    max_target_occurrences: Annotated[
+        int,
+        typer.Option(
+            "--max-target-occurrences",
+            min=0,
+            help=(
+                "Maximum number of alignments allowed per target sequence. "
+                "Targets above this count are removed."
+            ),
+            rich_help_panel="Protein alignment",
+            show_default=True,
+        ),
+    ] = 50,
     output: Annotated[
         Path,
         typer.Option(
@@ -161,6 +174,7 @@ def run(
         "diamond_db": diamond_db,
         "max_low_complexity": max_low_complexity,
         "max_clusters_per_sequence": max_clusters_per_sequence,
+        "max_target_occurrences": max_target_occurrences,
     }
     try:
         exit_code = launch_workflow(

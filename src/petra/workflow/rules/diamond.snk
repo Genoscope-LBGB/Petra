@@ -14,3 +14,19 @@ rule diamond:
         "--out {output.alignment:q} --threads {threads} -k 10 "
         "--outfmt 6 qseqid sseqid evalue bitscore staxids "
         "> {log:q} 2>&1"
+
+
+rule filter_overrepresented_targets:
+    """Remove alignments to target sequences occurring above the configured limit."""
+    input:
+        alignment="predictions.diamond.tsv",
+    output:
+        alignment=temp("predictions.diamond.filtered.tsv"),
+    log:
+        "logs/filter_overrepresented_targets.log",
+    benchmark:
+        "benchmarks/filter_overrepresented_targets.tsv"
+    params:
+        maximum=config["max_target_occurrences"],
+    script:
+        "../scripts/filter_overrepresented_targets.py"

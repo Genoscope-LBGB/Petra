@@ -23,3 +23,6 @@ set-resources:
   diamond:
     runtime: 1440
     mem_mb: 128000
+  filter_overrepresented_targets:
+    runtime: 60
+    mem_mb: 10000
