@@ -14,6 +14,12 @@ set-resources:
   minimap2:
     runtime: 1440
     mem_mb: 240000
+  bedtools_genomecov:
+    runtime: 1440
+    mem_mb: 10000
+  median_coverage:
+    runtime: 1440
+    mem_mb: 10000
   pyrodigal:
     runtime: 720
     mem_mb: 128000

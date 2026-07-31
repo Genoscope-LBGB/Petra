@@ -23,10 +23,6 @@ petra run \
   --output run-1
 ```
 
-The command requires `minimap2` and `samtools` on `PATH`. Long reads are mapped
-to the assembly and written as coordinate-sorted primary alignments in
-`aln.sorted.bam`.
-
 ### Building the local DIAMOND database
 
 Build a taxonomy-aware DIAMOND database from local inputs:

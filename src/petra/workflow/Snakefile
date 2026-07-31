@@ -1,13 +1,13 @@
 include: "rules/gene_prediction.smk"
 include: "rules/diamond.smk"
 include: "rules/whokaryote.smk"
-include: "rules/minimap2.smk"
+include: "rules/coverage.smk"
 
 
 rule all:
     input:
         "predictions.final.tsv",
-        "aln.sorted.bam",
+        "predictions.coverage.tsv",
         "predictions.eukaryota.fasta",
         "predictions.bacteria.fasta",
         "predictions.viruses.fasta",

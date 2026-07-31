@@ -18,6 +18,7 @@ from .launcher import LauncherError, launch_workflow, profile_summaries
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
 _RUN_CONTEXT = {**_HELP_CONTEXT, "allow_extra_args": True}
 
+
 class SequencingTechnology(str, Enum):
     PACBIO = "pacbio"
     ONT = "ont"
@@ -27,22 +28,22 @@ def _require_executables() -> None:
     missing = [
         executable
         for executable in (
-            "diamond", 
-            "pyrodigal", 
-            "taxonkit", 
-            "cdhit", 
-            "minimap2", 
+            "diamond",
+            "pyrodigal",
+            "taxonkit",
+            "cd-hit",
+            "minimap2",
             "samtools",
             "segmasker",
-            "whokaryote",
-        ),
+            "whokaryote.py",
+            "bedtools",
+        )
         if shutil.which(executable) is None
     ]
     if missing:
         raise LauncherError(
-            f"Required mapping executables not found on PATH: {', '.join(missing)}."
+            f"Required executables not found on PATH: {', '.join(missing)}."
         )
-
 
 
 app = typer.Typer(
@@ -150,6 +151,14 @@ def run(
             show_default=True,
         ),
     ] = SequencingTechnology.PACBIO,
+    no_bam_cleaning: Annotated[
+        bool,
+        typer.Option(
+            "--no-bam-cleaning",
+            help="Keep the sorted BAM after median coverage has been calculated.",
+            rich_help_panel="Long-read mapping",
+        ),
+    ] = False,
     max_low_complexity: Annotated[
         int,
         typer.Option(
@@ -237,6 +246,7 @@ def run(
         "diamond_db": diamond_db,
         "long_reads": long_reads,
         "sequencing_technology": technology,
+        "no_bam_cleaning": no_bam_cleaning,
         "max_low_complexity": max_low_complexity,
         "max_clusters_per_sequence": max_clusters_per_sequence,
         "max_target_occurrences": max_target_occurrences,
