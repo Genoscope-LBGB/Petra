@@ -6,6 +6,7 @@ set-threads:
   pyrodigal: 12
   cdhit: 12
   diamond: 12
+  replace_taxids_with_lineages: 4
 
 set-resources:
   pyrodigal:
@@ -24,5 +25,8 @@ set-resources:
     runtime: 1440
     mem_mb: 128000
   filter_overrepresented_targets:
+    runtime: 60
+    mem_mb: 10000
+  replace_taxids_with_lineages:
     runtime: 60
     mem_mb: 10000

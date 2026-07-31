@@ -30,3 +30,30 @@ rule filter_overrepresented_targets:
         maximum=config["max_target_occurrences"],
     script:
         "../scripts/filter_overrepresented_targets.py"
+
+
+rule replace_taxids_with_lineages:
+    """Replace subject TaxIDs with one fixed-rank lineage.
+
+    DIAMOND can report multiple, numerically ordered TaxIDs for one subject.
+    Their LCA is the most specific lineage supported by every assignment and
+    avoids treating the first TaxID as a preferred assignment.
+    """
+    input:
+        alignment="predictions.diamond.filtered.tsv",
+    output:
+        alignment="predictions.diamond.lineages.tsv",
+    log:
+        "logs/replace_taxids_with_lineages.log",
+    benchmark:
+        "benchmarks/replace_taxids_with_lineages.tsv"
+    shell:
+        "(taxonkit --threads {threads} lca --taxids-field 5 --separator ';' "
+        "{input.alignment:q} "
+        "| taxonkit --threads {threads} reformat2 --taxid-field 6 "
+        "--format '{{domain|acellular root|superkingdom}};{{kingdom}};"
+        "{{phylum}};{{subphylum}};{{superclass}};{{class}};{{superorder}};"
+        "{{order}};{{suborder}};{{family}};{{subfamily}};{{genus}};"
+        "{{subgenus}};{{species}};{{subspecies}}' "
+        "--miss-rank-repl 'N/A' --miss-taxid-repl 'N/A' "
+        "| cut -f 1-4,7) > {output.alignment:q} 2> {log:q}"
