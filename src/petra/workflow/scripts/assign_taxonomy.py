@@ -24,6 +24,10 @@ TAXONOMIC_RANKS = (
     "subspecies",
 )
 _MISSING_TAXON = "N/A"
+_REASON_COLUMN = "unassigned_reason"
+_NO_REASON = "-"
+_GENE_DENSITY_REASON = "gene_density"
+_NO_CONSENSUS_REASON = "no_consensus"
 
 
 @dataclass
@@ -205,7 +209,7 @@ def assign_taxonomy(
     with destination.open("w", encoding="utf-8") as output_handle:
         output_handle.write(
             "sequence_name\tnumber_of_aligned_clusters\t"
-            + "\t".join(TAXONOMIC_RANKS)
+            + "\t".join((*TAXONOMIC_RANKS, _REASON_COLUMN))
             + "\n"
         )
         for sequence_id in sequence_ids:
@@ -214,18 +218,31 @@ def assign_taxonomy(
                 total > 0
                 and sequence_lengths[sequence_id] <= total * max_bases_per_aligned_gene
             )
-            if meets_density:
+            reason = _NO_REASON
+            if total > 0 and not meets_density:
+                lineage = [_MISSING_TAXON] * len(TAXONOMIC_RANKS)
+                reason = _GENE_DENSITY_REASON
+            elif meets_density:
+                votes_by_rank = rank_votes[sequence_id]
                 lineage = [
-                    _majority_taxon(votes, total, alpha)
-                    for votes in rank_votes[sequence_id]
+                    _majority_taxon(votes, total, alpha) for votes in votes_by_rank
                 ]
+                has_taxonomic_evidence = any(
+                    taxon != _MISSING_TAXON
+                    for votes in votes_by_rank
+                    for taxon in votes
+                )
+                if has_taxonomic_evidence and all(
+                    taxon == _MISSING_TAXON for taxon in lineage
+                ):
+                    reason = _NO_CONSENSUS_REASON
             else:
                 lineage = [_MISSING_TAXON] * len(TAXONOMIC_RANKS)
             if any(taxon != _MISSING_TAXON for taxon in lineage):
                 assigned_sequences += 1
             output_handle.write(
                 f"{sequence_id}\t{assignment_counts[sequence_id]}\t"
-                + "\t".join(lineage)
+                + "\t".join((*lineage, reason))
                 + "\n"
             )
 

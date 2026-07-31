@@ -10,7 +10,7 @@ _REASON_COLUMN = "unassigned_reason"
 _NO_REASON = "-"
 _WHOKARYOTE_REASON = "whokaryote"
 _METADATA_COLUMNS = ("sequence_name", "number_of_aligned_clusters")
-_RAW_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS)
+_RAW_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS, _REASON_COLUMN)
 _WHOKARYOTE_COLUMNS = ("contig", "predicted")
 _PETRA_CLASSES = {
     "Eukaryota": "eukaryote",
@@ -73,7 +73,7 @@ def control_taxonomy(
                 f"Invalid raw taxonomy header in {raw_taxonomy}: expected "
                 f"{_RAW_COLUMNS!r}, found {header!r}."
             )
-        writer.writerow((*header, _REASON_COLUMN))
+        writer.writerow(header)
 
         for line_number, row in enumerate(reader, start=2):
             if len(row) != len(_RAW_COLUMNS) or not row[0]:
@@ -118,7 +118,7 @@ def control_taxonomy(
                 )
                 disagreements += 1
             else:
-                writer.writerow((*row, _NO_REASON))
+                writer.writerow(row)
 
     unknown_sequence_ids = predictions.keys() - raw_sequence_ids
     if unknown_sequence_ids:

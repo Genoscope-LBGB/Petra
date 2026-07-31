@@ -26,7 +26,9 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
                 self._raw_row("virus", "1", "Viruses"),
                 self._raw_row("viroid", "1", "Viroids"),
                 self._raw_row("not_predicted", "2", "Bacteria"),
-                self._raw_row("petra_na", "0", "N/A", kingdom="Fungi"),
+                self._raw_row(
+                    "petra_na", "0", "N/A", reason="gene_density", kingdom="Fungi"
+                ),
             ]
             self._write_raw(raw_taxonomy, raw_rows)
             predictions.write_text(
@@ -52,12 +54,12 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
                     "unassigned_reason",
                 ],
             )
-            self.assertEqual(rows[1], [*raw_rows[0], "-"])
+            self.assertEqual(rows[1], raw_rows[0])
             self.assertEqual(
                 rows[2],
                 ["bacterium", "2", *(["N/A"] * len(TAXONOMIC_RANKS)), "whokaryote"],
             )
-            self.assertEqual(rows[3], [*raw_rows[2], "-"])
+            self.assertEqual(rows[3], raw_rows[2])
             self.assertEqual(
                 rows[4],
                 ["virus", "1", *(["N/A"] * len(TAXONOMIC_RANKS)), "whokaryote"],
@@ -66,8 +68,8 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
                 rows[5],
                 ["viroid", "1", *(["N/A"] * len(TAXONOMIC_RANKS)), "whokaryote"],
             )
-            self.assertEqual(rows[6], [*raw_rows[5], "-"])
-            self.assertEqual(rows[7], [*raw_rows[6], "-"])
+            self.assertEqual(rows[6], raw_rows[5])
+            self.assertEqual(rows[7], raw_rows[6])
 
     def test_rejects_unknown_whokaryote_prediction(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -130,17 +132,26 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
 
     @staticmethod
     def _raw_row(
-        sequence_id: str, aligned_clusters: str, domain: str, **ranks: str
+        sequence_id: str,
+        aligned_clusters: str,
+        domain: str,
+        reason: str = "-",
+        **ranks: str,
     ) -> list[str]:
         lineage = [
             domain if rank == "domain" else ranks.get(rank, "N/A")
             for rank in TAXONOMIC_RANKS
         ]
-        return [sequence_id, aligned_clusters, *lineage]
+        return [sequence_id, aligned_clusters, *lineage, reason]
 
     @staticmethod
     def _write_raw(destination: Path, rows: list[list[str]]) -> None:
-        header = ["sequence_name", "number_of_aligned_clusters", *TAXONOMIC_RANKS]
+        header = [
+            "sequence_name",
+            "number_of_aligned_clusters",
+            *TAXONOMIC_RANKS,
+            "unassigned_reason",
+        ]
         destination.write_text(
             "\n".join("\t".join(row) for row in [header, *rows]) + "\n",
             encoding="utf-8",
