@@ -60,7 +60,11 @@ rule replace_taxids_with_lineages:
 
 
 rule assign_taxonomy:
-    """Assign each assembly sequence by alpha-majority of its protein assignments."""
+    """
+    Assign each assembly sequence by alpha-majority of its protein assignments.
+    Discards sequences with fewer than the configured maximum bases per aligned gene.
+
+    """
     input:
         assembly=config["assembly"],
         proteins="predictions.clustered.faa",
@@ -73,5 +77,6 @@ rule assign_taxonomy:
         "benchmarks/assign_taxonomy.tsv"
     params:
         alpha=0.5,
+        max_bases_per_aligned_gene=config["max_bases_per_aligned_gene"],
     script:
         "../scripts/assign_taxonomy.py"

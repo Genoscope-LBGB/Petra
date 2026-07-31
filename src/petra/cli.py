@@ -140,6 +140,20 @@ def run(
             show_default=True,
         ),
     ] = 50,
+    max_bases_per_aligned_gene: Annotated[
+        int,
+        typer.Option(
+            "--max-bases-per-aligned-gene",
+            min=1,
+            help=(
+                "Maximum number of assembly-sequence base pairs allowed per "
+                "aligned representative gene. Sequences below this density "
+                "are assigned to N/A."
+            ),
+            rich_help_panel="Taxonomic assignment",
+            show_default=True,
+        ),
+    ] = 50_000,
     output: Annotated[
         Path,
         typer.Option(
@@ -175,6 +189,7 @@ def run(
         "max_low_complexity": max_low_complexity,
         "max_clusters_per_sequence": max_clusters_per_sequence,
         "max_target_occurrences": max_target_occurrences,
+        "max_bases_per_aligned_gene": max_bases_per_aligned_gene,
     }
     try:
         exit_code = launch_workflow(

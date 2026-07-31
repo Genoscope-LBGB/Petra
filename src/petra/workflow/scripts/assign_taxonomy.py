@@ -53,16 +53,32 @@ def _assembly_sequence_id(protein_id: str) -> str:
     return sequence_id
 
 
-def _assembly_sequences(source: Path) -> list[str]:
-    sequence_ids = list(_fasta_identifiers(source))
-    duplicate_ids = [
-        sequence_id for sequence_id, count in Counter(sequence_ids).items() if count > 1
-    ]
-    if duplicate_ids:
-        raise ValueError(
-            f"Duplicate assembly sequence identifier: {duplicate_ids[0]!r}."
-        )
-    return sequence_ids
+def _assembly_sequences(source: Path) -> dict[str, int]:
+    sequence_lengths: dict[str, int] = {}
+    current_sequence_id: str | None = None
+    with source.open(encoding="utf-8") as input_handle:
+        for line_number, line in enumerate(input_handle, start=1):
+            if line.startswith(">"):
+                sequence_id = line[1:].split(maxsplit=1)[0]
+                if not sequence_id:
+                    raise ValueError(
+                        f"Invalid FASTA header at line {line_number} in {source}: "
+                        "expected a sequence identifier."
+                    )
+                if sequence_id in sequence_lengths:
+                    raise ValueError(
+                        f"Duplicate assembly sequence identifier: {sequence_id!r}."
+                    )
+                sequence_lengths[sequence_id] = 0
+                current_sequence_id = sequence_id
+            elif line.strip():
+                if current_sequence_id is None:
+                    raise ValueError(
+                        f"Invalid assembly FASTA at line {line_number}: "
+                        "sequence data occurs before the first header."
+                    )
+                sequence_lengths[current_sequence_id] += len(line.strip())
+    return sequence_lengths
 
 
 def _clustered_proteins(source: Path, assembly_ids: set[str]) -> dict[str, str]:
@@ -158,14 +174,18 @@ def assign_taxonomy(
     alignment: Path,
     destination: Path,
     alpha: float = 0.5,
+    max_bases_per_aligned_gene: int = 50_000,
 ) -> None:
     if not 0 < alpha <= 1:
         raise ValueError(
             "The alpha-majority threshold must be greater than 0 and at most 1."
         )
+    if max_bases_per_aligned_gene < 1:
+        raise ValueError("The maximum bases per aligned gene must be positive.")
 
-    sequence_ids = _assembly_sequences(assembly)
-    protein_sequences = _clustered_proteins(proteins, set(sequence_ids))
+    sequence_lengths = _assembly_sequences(assembly)
+    sequence_ids = list(sequence_lengths)
+    protein_sequences = _clustered_proteins(proteins, set(sequence_lengths))
     protein_assignments = _alignment_assignments(alignment, protein_sequences)
 
     rank_votes: dict[str, list[Counter[str]]] = {}
@@ -190,7 +210,11 @@ def assign_taxonomy(
         )
         for sequence_id in sequence_ids:
             total = assignment_counts[sequence_id]
-            if total:
+            meets_density = (
+                total > 0
+                and sequence_lengths[sequence_id] <= total * max_bases_per_aligned_gene
+            )
+            if meets_density:
                 lineage = [
                     _majority_taxon(votes, total, alpha)
                     for votes in rank_votes[sequence_id]
@@ -223,6 +247,7 @@ if "snakemake" in globals():
                     Path(workflow.input.alignment),
                     Path(workflow.output.taxonomy),
                     float(workflow.params.alpha),
+                    int(workflow.params.max_bases_per_aligned_gene),
                 )
             except Exception:
                 traceback.print_exc()

@@ -123,6 +123,46 @@ class AssignTaxonomyTest(unittest.TestCase):
             self.assertEqual(row[2], "Bacteria")
             self.assertEqual(row[4], "N/A")
 
+    def test_requires_one_aligned_cluster_per_configured_number_of_bases(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            assembly = directory / "assembly.fasta"
+            proteins = directory / "proteins.faa"
+            alignment = directory / "lineages.tsv"
+            destination = directory / "taxonomy.tsv"
+
+            assembly.write_text(
+                ">at_threshold\nAAAA\nAAAA\n>below_threshold\nAAAAAAAAA\n",
+                encoding="utf-8",
+            )
+            proteins.write_text(
+                ">at_threshold_1\nM\n>at_threshold_2\nM\n"
+                ">below_threshold_1\nM\n>below_threshold_2\nM\n",
+                encoding="utf-8",
+            )
+            bacteria = self._lineage(domain="Bacteria")
+            alignment.write_text(
+                f"at_threshold_1\ttarget-1\t1e-20\t100\t{bacteria}\n"
+                f"at_threshold_2\ttarget-2\t1e-20\t100\t{bacteria}\n"
+                f"below_threshold_1\ttarget-3\t1e-20\t100\t{bacteria}\n"
+                f"below_threshold_2\ttarget-4\t1e-20\t100\t{bacteria}\n",
+                encoding="utf-8",
+            )
+
+            assign_taxonomy(
+                assembly,
+                proteins,
+                alignment,
+                destination,
+                max_bases_per_aligned_gene=4,
+            )
+
+            rows = [line.split("\t") for line in destination.read_text().splitlines()]
+            self.assertEqual(rows[1][0:3], ["at_threshold", "2", "Bacteria"])
+            self.assertEqual(rows[2][0:3], ["below_threshold", "2", "N/A"])
+
     @staticmethod
     def _lineage(**ranks: str) -> str:
         return ";".join(ranks.get(rank, "N/A") for rank in TAXONOMIC_RANKS)
