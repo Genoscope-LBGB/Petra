@@ -5,4 +5,4 @@ include: "rules/diamond.snk"
 rule all:
     input:
         "predictions.gff",
-        "predictions.diamond.tsv"
+        "predictions.diamond.tsv",

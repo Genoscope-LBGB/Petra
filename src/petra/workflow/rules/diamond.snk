@@ -2,13 +2,13 @@ rule diamond:
     """Align clustered predicted proteins against the configured DIAMOND database."""
     input:
         proteins="predictions.clustered.faa",
-        database=config["diamond_db"]
+        database=config["diamond_db"],
     output:
-        alignment=temp("predictions.diamond.tsv")
+        alignment=temp("predictions.diamond.tsv"),
+    log:
+        "logs/diamond.log",
     benchmark:
         "benchmarks/diamond.tsv"
-    log:
-        "logs/diamond.log"
     shell:
         "diamond blastp --query {input.proteins:q} --db {input.database:q} "
         "--out {output.alignment:q} --threads {threads} -k 10 "
