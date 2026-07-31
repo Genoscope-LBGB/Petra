@@ -1,7 +1,8 @@
 include: "rules/gene_prediction.smk"
 include: "rules/diamond.snk"
+include: "rules/whokaryote.snk"
 
 
 rule all:
     input:
-        "predictions.taxonomy.tsv",
+        "predictions.final.tsv",

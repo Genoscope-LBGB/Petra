@@ -7,6 +7,7 @@ set-threads:
   cdhit: 12
   diamond: 12
   replace_taxids_with_lineages: 4
+  whokaryote: 12
 
 set-resources:
   pyrodigal:
@@ -31,5 +32,11 @@ set-resources:
     runtime: 60
     mem_mb: 10000
   assign_taxonomy:
+    runtime: 60
+    mem_mb: 10000
+  whokaryote:
+    runtime: 720
+    mem_mb: 32000
+  control_taxonomy_with_whokaryote:
     runtime: 60
     mem_mb: 10000
