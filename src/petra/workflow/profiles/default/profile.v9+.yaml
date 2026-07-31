@@ -40,3 +40,6 @@ set-resources:
   control_taxonomy_with_whokaryote:
     runtime: 60
     mem_mb: 10000
+  split_assembly_by_domain:
+    runtime: 60
+    mem_mb: 10000

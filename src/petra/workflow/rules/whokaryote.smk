@@ -34,3 +34,22 @@ rule control_taxonomy_with_whokaryote:
         "benchmarks/control_taxonomy_with_whokaryote.tsv"
     script:
         "../scripts/control_taxonomy_with_whokaryote.py"
+
+
+rule split_assembly_by_domain:
+    """Split assembly sequences into FASTA files by final PETRA domain."""
+    input:
+        assembly=config["assembly"],
+        taxonomy="predictions.final.tsv",
+    output:
+        eukaryota="predictions.eukaryota.fasta",
+        bacteria="predictions.bacteria.fasta",
+        viruses="predictions.viruses.fasta",
+        archaea="predictions.archaea.fasta",
+        unassigned="predictions.unassigned.fasta",
+    log:
+        "logs/split_assembly_by_domain.log",
+    benchmark:
+        "benchmarks/split_assembly_by_domain.tsv"
+    script:
+        "../scripts/split_assembly_by_domain.py"

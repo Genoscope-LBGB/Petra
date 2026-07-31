@@ -1,8 +1,13 @@
 include: "rules/gene_prediction.smk"
-include: "rules/diamond.snk"
-include: "rules/whokaryote.snk"
+include: "rules/diamond.smk"
+include: "rules/whokaryote.smk"
 
 
 rule all:
     input:
         "predictions.final.tsv",
+        "predictions.eukaryota.fasta",
+        "predictions.bacteria.fasta",
+        "predictions.viruses.fasta",
+        "predictions.archaea.fasta",
+        "predictions.unassigned.fasta",
