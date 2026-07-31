@@ -177,18 +177,15 @@ def cluster_proteins(
 
     with TemporaryDirectory(prefix="petra-cdhit-") as temporary_directory:
         directory = Path(temporary_directory)
-        with destination.open("wb") as output_handle, ThreadPoolExecutor(
-            max_workers=workers
-        ) as executor:
+        with (
+            destination.open("wb") as output_handle,
+            ThreadPoolExecutor(max_workers=workers) as executor,
+        ):
             for batch in _group_batches(source, directory, workers):
                 clustered_outputs = executor.map(runner, batch)
-                for group, clustered in zip(
-                    batch, clustered_outputs, strict=True
-                ):
+                for group, clustered in zip(batch, clustered_outputs, strict=True):
                     if log is not None and group.log.is_file():
-                        log.write(
-                            f"== Assembly sequence {group.sequence_id} ==\n"
-                        )
+                        log.write(f"== Assembly sequence {group.sequence_id} ==\n")
                         with group.log.open(encoding="utf-8") as group_log:
                             for line in group_log:
                                 log.write(line)

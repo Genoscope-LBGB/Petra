@@ -178,9 +178,9 @@ def launch_workflow(
 
     persisted_config = dict(normalized_workflow_config)
     persisted_config[_RESERVED_CONFIG_KEY] = {
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace(
-            "+00:00", "Z"
-        ),
+        "generated_at": datetime.now(UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "workflow_version": workflow_version,
         "output": str(output_directory),
         "workflow_profile": selected_profile.name if selected_profile else None,
@@ -232,12 +232,12 @@ def _load_profile(name: str, path: Path) -> WorkflowProfile:
     try:
         parsed = yaml.safe_load(config_file.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
-        raise LauncherError(f"Could not read workflow profile {name!r}: {error}") from error
+        raise LauncherError(
+            f"Could not read workflow profile {name!r}: {error}"
+        ) from error
     if parsed is None:
         parsed = {}
-    if not isinstance(parsed, dict) or not all(
-        isinstance(key, str) for key in parsed
-    ):
+    if not isinstance(parsed, dict) or not all(isinstance(key, str) for key in parsed):
         raise LauncherError(
             f"Workflow profile {name!r} must contain a YAML mapping with string keys."
         )
@@ -333,7 +333,9 @@ def _normalize(value: Any, *, path: str, invocation_directory: Path) -> Any:
         normalized: dict[str, Any] = {}
         for key, item in value.items():
             if not isinstance(key, str):
-                raise LauncherError(f"Unsupported non-string config key at {path}: {key!r}")
+                raise LauncherError(
+                    f"Unsupported non-string config key at {path}: {key!r}"
+                )
             normalized[key] = _normalize(
                 item,
                 path=f"{path}.{key}",
@@ -362,9 +364,7 @@ def _normalize(value: Any, *, path: str, invocation_directory: Path) -> Any:
             normalized_items,
             key=lambda item: yaml.safe_dump(item, sort_keys=True),
         )
-    raise LauncherError(
-        f"Unsupported config value at {path}: {type(value).__name__}."
-    )
+    raise LauncherError(f"Unsupported config value at {path}: {type(value).__name__}.")
 
 
 def _write_config_atomically(path: Path, config: Mapping[str, Any]) -> None:
@@ -389,7 +389,9 @@ def _write_config_atomically(path: Path, config: Mapping[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary_path, path)
     except (OSError, yaml.YAMLError) as error:
-        raise LauncherError(f"Could not persist workflow config at {path}: {error}") from error
+        raise LauncherError(
+            f"Could not persist workflow config at {path}: {error}"
+        ) from error
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)

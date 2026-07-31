@@ -25,9 +25,10 @@ def filter_fasta(source: Path, destination: Path, maximum: int) -> None:
     sequence_lines: list[str] = []
     low_complexity_residues = 0
 
-    with source.open(encoding="utf-8") as input_handle, destination.open(
-        "w", encoding="utf-8"
-    ) as output_handle:
+    with (
+        source.open(encoding="utf-8") as input_handle,
+        destination.open("w", encoding="utf-8") as output_handle,
+    ):
         for line in input_handle:
             if line.startswith(">"):
                 if header is not None:
@@ -43,10 +44,14 @@ def filter_fasta(source: Path, destination: Path, maximum: int) -> None:
                 low_complexity_residues = 0
             elif header is None:
                 if line.strip():
-                    raise ValueError("Protein FASTA contains sequence data before a header.")
+                    raise ValueError(
+                        "Protein FASTA contains sequence data before a header."
+                    )
             else:
                 sequence_lines.append(line)
-                low_complexity_residues += sum(character.islower() for character in line)
+                low_complexity_residues += sum(
+                    character.islower() for character in line
+                )
 
         if header is None:
             raise ValueError("Protein FASTA contains no records.")

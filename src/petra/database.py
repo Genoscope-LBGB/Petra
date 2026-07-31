@@ -172,7 +172,9 @@ def _download(url: str, destination: Path, label: str) -> None:
     except (OSError, URLError) as error:
         if created:
             _remove_generated_file(destination)
-        raise DatabaseBuildError(f"Could not download {label} from {url}: {error}") from error
+        raise DatabaseBuildError(
+            f"Could not download {label} from {url}: {error}"
+        ) from error
     logger.info("Downloaded %s to %s", label, destination)
 
 

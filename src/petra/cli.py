@@ -40,6 +40,7 @@ def _configure_logging() -> None:
     petra_logger.setLevel(logging.INFO)
     petra_logger.propagate = False
 
+
 def _version_callback(value: bool) -> None:
     if value:
         try:
@@ -179,7 +180,7 @@ def run(
 
 
 @app.command(
-    "build-db", 
+    "build-db",
     context_settings=_HELP_CONTEXT,
     epilog="Usually takes around 11 hours and 20GB of RAM to complete",
 )
