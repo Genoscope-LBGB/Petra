@@ -10,6 +10,7 @@ from assign_taxonomy import TAXONOMIC_RANKS
 _TAXONOMY_COLUMNS = (
     "sequence_name",
     "number_of_aligned_clusters",
+    "number_of_genes_in_aligned_clusters",
     *TAXONOMIC_RANKS,
     "unassigned_reason",
 )
@@ -48,10 +49,10 @@ def _domain_assignments(source: Path) -> dict[str, str]:
                     f"at line {line_number} in {source}."
                 )
             try:
-                assignments[sequence_id] = _OUTPUT_BY_DOMAIN[row[2]]
+                assignments[sequence_id] = _OUTPUT_BY_DOMAIN[row[3]]
             except KeyError as error:
                 raise ValueError(
-                    f"Unexpected final domain {row[2]!r} for sequence "
+                    f"Unexpected final domain {row[3]!r} for sequence "
                     f"{sequence_id!r} at line {line_number} in {source}."
                 ) from error
     return assignments

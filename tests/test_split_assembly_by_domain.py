@@ -112,6 +112,7 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
         header = [
             "sequence_name",
             "number_of_aligned_clusters",
+            "number_of_genes_in_aligned_clusters",
             *TAXONOMIC_RANKS,
             "unassigned_reason",
         ]
@@ -122,6 +123,7 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
                 writer.writerow(
                     [
                         sequence_id,
+                        "1",
                         "1",
                         domain,
                         *(["N/A"] * (len(TAXONOMIC_RANKS) - 1)),

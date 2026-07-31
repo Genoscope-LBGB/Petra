@@ -61,6 +61,7 @@ rule cdhit:
         proteins="predictions.filtered.faa",
     output:
         proteins=temp("predictions.clustered.faa"),
+        cluster_sizes=temp("predictions.cluster_sizes.tsv"),
     log:
         "logs/cdhit.log",
     benchmark:

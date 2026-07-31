@@ -9,7 +9,11 @@ _MISSING_TAXON = "N/A"
 _REASON_COLUMN = "unassigned_reason"
 _NO_REASON = "-"
 _WHOKARYOTE_REASON = "whokaryote"
-_METADATA_COLUMNS = ("sequence_name", "number_of_aligned_clusters")
+_METADATA_COLUMNS = (
+    "sequence_name",
+    "number_of_aligned_clusters",
+    "number_of_genes_in_aligned_clusters",
+)
 _RAW_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS, _REASON_COLUMN)
 _WHOKARYOTE_COLUMNS = ("contig", "predicted")
 _PETRA_CLASSES = {
@@ -91,7 +95,7 @@ def control_taxonomy(
                 )
             raw_sequence_ids.add(sequence_id)
 
-            domain = row[2]
+            domain = row[len(_METADATA_COLUMNS)]
             if domain == _MISSING_TAXON:
                 petra_class = None
             else:

@@ -204,9 +204,9 @@ def run(
             "--max-bases-per-aligned-gene",
             min=1,
             help=(
-                "Maximum number of assembly-sequence base pairs allowed per "
-                "aligned representative gene. Sequences below this density "
-                "are assigned to N/A."
+                "Maximum number of assembly-sequence base pairs allowed per gene "
+                "represented by an aligned protein cluster. Sequences below this "
+                "density are assigned to N/A."
             ),
             rich_help_panel="Taxonomic assignment",
             show_default=True,
