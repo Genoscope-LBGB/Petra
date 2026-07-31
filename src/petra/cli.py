@@ -78,16 +78,6 @@ def main(
 )
 def run(
     context: typer.Context,
-    output: Annotated[
-        Path,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Required output directory and Snakemake working directory.",
-            file_okay=False,
-            rich_help_panel="Execution",
-        ),
-    ],
     assembly: Annotated[
         Path,
         typer.Option(
@@ -137,6 +127,16 @@ def run(
             show_default=True,
         ),
     ] = 1000,
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Required output directory and Snakemake working directory.",
+            file_okay=False,
+            rich_help_panel="Execution",
+        ),
+    ] = Path("petra_output"),
     profile: Annotated[
         str,
         typer.Option(
