@@ -30,3 +30,6 @@ set-resources:
   replace_taxids_with_lineages:
     runtime: 60
     mem_mb: 10000
+  assign_taxonomy:
+    runtime: 60
+    mem_mb: 10000

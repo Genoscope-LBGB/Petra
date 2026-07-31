@@ -4,4 +4,4 @@ include: "rules/diamond.snk"
 
 rule all:
     input:
-        "predictions.diamond.lineages.tsv",
+        "predictions.taxonomy.tsv",

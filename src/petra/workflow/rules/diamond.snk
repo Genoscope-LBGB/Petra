@@ -42,7 +42,7 @@ rule replace_taxids_with_lineages:
     input:
         alignment="predictions.diamond.filtered.tsv",
     output:
-        alignment="predictions.diamond.lineages.tsv",
+        alignment=temp("predictions.diamond.lineages.tsv"),
     log:
         "logs/replace_taxids_with_lineages.log",
     benchmark:
@@ -57,3 +57,21 @@ rule replace_taxids_with_lineages:
         "{{subgenus}};{{species}};{{subspecies}}' "
         "--miss-rank-repl 'N/A' --miss-taxid-repl 'N/A' "
         "| cut -f 1-4,7) > {output.alignment:q} 2> {log:q}"
+
+
+rule assign_taxonomy:
+    """Assign each assembly sequence by alpha-majority of its protein assignments."""
+    input:
+        assembly=config["assembly"],
+        proteins="predictions.clustered.faa",
+        alignment="predictions.diamond.lineages.tsv",
+    output:
+        taxonomy="predictions.taxonomy.tsv",
+    log:
+        "logs/assign_taxonomy.log",
+    benchmark:
+        "benchmarks/assign_taxonomy.tsv"
+    params:
+        alpha=0.5,
+    script:
+        "../scripts/assign_taxonomy.py"
