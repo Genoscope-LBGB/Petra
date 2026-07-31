@@ -8,6 +8,25 @@ pip install .
 
 ## Usage
 
+### Running the workflow
+
+Supply every long-read file by repeating `--long-reads`. The sequencing technology
+defaults to `pacbio` (`map-hifi`), select `ont` to use `map-ont`:
+
+```console
+petra run \
+  --assembly assembly.fasta \
+  --diamond-db database/petra.dmnd \
+  --long-reads reads-1.fastq.gz \
+  --long-reads reads-2.fastq.gz \
+  --technology ont \
+  --output run-1
+```
+
+The command requires `minimap2` and `samtools` on `PATH`. Long reads are mapped
+to the assembly and written as coordinate-sorted primary alignments in
+`aln.sorted.bam`.
+
 ### Building the local DIAMOND database
 
 Build a taxonomy-aware DIAMOND database from local inputs:

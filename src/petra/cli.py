@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from importlib.metadata import PackageNotFoundError, version
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
@@ -15,6 +17,32 @@ from .launcher import LauncherError, launch_workflow, profile_summaries
 
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
 _RUN_CONTEXT = {**_HELP_CONTEXT, "allow_extra_args": True}
+
+class SequencingTechnology(str, Enum):
+    PACBIO = "pacbio"
+    ONT = "ont"
+
+
+def _require_executables() -> None:
+    missing = [
+        executable
+        for executable in (
+            "diamond", 
+            "pyrodigal", 
+            "taxonkit", 
+            "cdhit", 
+            "minimap2", 
+            "samtools",
+            "segmasker",
+            "whokaryote",
+        ),
+        if shutil.which(executable) is None
+    ]
+    if missing:
+        raise LauncherError(
+            f"Required mapping executables not found on PATH: {', '.join(missing)}."
+        )
+
 
 
 app = typer.Typer(
@@ -101,6 +129,27 @@ def run(
             rich_help_panel="Inputs",
         ),
     ],
+    long_reads: Annotated[
+        list[Path],
+        typer.Option(
+            "--long-reads",
+            "-r",
+            help="Long-read sequence file to map; repeat for multiple files.",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            rich_help_panel="Inputs",
+        ),
+    ],
+    technology: Annotated[
+        SequencingTechnology,
+        typer.Option(
+            "--technology",
+            help="Long-read sequencing technology used to select the Minimap2 preset.",
+            rich_help_panel="Long-read mapping",
+            show_default=True,
+        ),
+    ] = SequencingTechnology.PACBIO,
     max_low_complexity: Annotated[
         int,
         typer.Option(
@@ -186,12 +235,15 @@ def run(
     workflow_config = {
         "assembly": assembly,
         "diamond_db": diamond_db,
+        "long_reads": long_reads,
+        "sequencing_technology": technology,
         "max_low_complexity": max_low_complexity,
         "max_clusters_per_sequence": max_clusters_per_sequence,
         "max_target_occurrences": max_target_occurrences,
         "max_bases_per_aligned_gene": max_bases_per_aligned_gene,
     }
     try:
+        _require_executables()
         exit_code = launch_workflow(
             distribution_name="petra",
             output=output,

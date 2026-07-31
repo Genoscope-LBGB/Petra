@@ -8,8 +8,12 @@ set-threads:
   diamond: 12
   replace_taxids_with_lineages: 4
   whokaryote: 12
+  minimap2: 24
 
 set-resources:
+  minimap2:
+    runtime: 1440
+    mem_mb: 240000
   pyrodigal:
     runtime: 720
     mem_mb: 128000
