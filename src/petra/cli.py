@@ -166,7 +166,11 @@ def run(
     raise typer.Exit(code=exit_code)
 
 
-@app.command("build-db", context_settings=_HELP_CONTEXT)
+@app.command(
+    "build-db", 
+    context_settings=_HELP_CONTEXT,
+    epilog="Usually takes around 11 hours and 20GB of RAM to complete",
+)
 def build_db(
     output: Annotated[
         Path,
