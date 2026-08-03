@@ -211,7 +211,7 @@ def run(
             rich_help_panel="Taxonomic assignment",
             show_default=True,
         ),
-    ] = 50_000,
+    ] = 200_000,
     output: Annotated[
         Path,
         typer.Option(
