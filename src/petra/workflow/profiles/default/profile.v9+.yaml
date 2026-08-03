@@ -5,7 +5,7 @@ cores: 4000
 set-threads:
   pyrodigal: 12
   cdhit: 12
-  diamond: 12
+  diamond: 24
   replace_taxids_with_lineages: 4
   whokaryote: 12
   minimap2: 24
