@@ -16,6 +16,7 @@ authors = [
   { name = "Benjamin Istace", email = "benjamin.istace@genoscope.cns.fr" },
 ]
 dependencies = [
+  "polars[rtcompat]>=1.35,<2",
   "PyYAML>=6.0,<7",
   "rich>=13.8,<16",
   "snakemake>=9,<10",
