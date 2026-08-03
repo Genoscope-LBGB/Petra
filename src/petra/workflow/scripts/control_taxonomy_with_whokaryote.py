@@ -14,7 +14,7 @@ _METADATA_COLUMNS = (
     "number_of_aligned_clusters",
     "number_of_genes_in_aligned_clusters",
 )
-_RAW_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS, _REASON_COLUMN)
+_RAW_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS)
 _WHOKARYOTE_COLUMNS = ("contig", "predicted")
 _PETRA_CLASSES = {
     "Eukaryota": "eukaryote",
@@ -59,7 +59,7 @@ def _whokaryote_predictions(source: Path) -> dict[str, str]:
 
 
 def control_taxonomy(
-    raw_taxonomy: Path, whokaryote_predictions: Path, destination: Path
+    raw_taxonomy: Path, whokaryote_predictions: Path, reasons_destination: Path
 ) -> None:
     predictions = _whokaryote_predictions(whokaryote_predictions)
     raw_sequence_ids: set[str] = set()
@@ -67,7 +67,7 @@ def control_taxonomy(
 
     with (
         raw_taxonomy.open(encoding="utf-8", newline="") as input_handle,
-        destination.open("w", encoding="utf-8", newline="") as output_handle,
+        reasons_destination.open("w", encoding="utf-8", newline="") as output_handle,
     ):
         reader = csv.reader(input_handle, delimiter="\t")
         writer = csv.writer(output_handle, delimiter="\t", lineterminator="\n")
@@ -77,7 +77,7 @@ def control_taxonomy(
                 f"Invalid raw taxonomy header in {raw_taxonomy}: expected "
                 f"{_RAW_COLUMNS!r}, found {header!r}."
             )
-        writer.writerow(header)
+        writer.writerow(("sequence_name", _REASON_COLUMN))
 
         for line_number, row in enumerate(reader, start=2):
             if len(row) != len(_RAW_COLUMNS) or not row[0]:
@@ -108,21 +108,15 @@ def control_taxonomy(
                     ) from error
 
             prediction = predictions.get(sequence_id)
+            reason = _NO_REASON
             if (
                 petra_class is not None
                 and prediction is not None
                 and petra_class != prediction
             ):
-                writer.writerow(
-                    (
-                        *row[: len(_METADATA_COLUMNS)],
-                        *([_MISSING_TAXON] * len(TAXONOMIC_RANKS)),
-                        _WHOKARYOTE_REASON,
-                    )
-                )
+                reason = _WHOKARYOTE_REASON
                 disagreements += 1
-            else:
-                writer.writerow(row)
+            writer.writerow((sequence_id, reason))
 
     unknown_sequence_ids = predictions.keys() - raw_sequence_ids
     if unknown_sequence_ids:
@@ -135,8 +129,8 @@ def control_taxonomy(
         )
 
     print(
-        f"Set {disagreements} of {len(raw_sequence_ids)} taxonomy assignments to "
-        "N/A due to disagreement with Whokaryote."
+        f"Reported {disagreements} of {len(raw_sequence_ids)} taxonomy assignments "
+        "that disagree with Whokaryote."
     )
 
 
@@ -149,7 +143,7 @@ if "snakemake" in globals():
                 control_taxonomy(
                     Path(workflow.input.raw_taxonomy),
                     Path(workflow.input.whokaryote_predictions),
-                    Path(workflow.output.taxonomy),
+                    Path(workflow.output.reasons),
                 )
             except Exception:
                 traceback.print_exc()

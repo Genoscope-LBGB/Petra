@@ -71,7 +71,8 @@ rule assign_taxonomy:
         cluster_sizes="predictions.cluster_sizes.tsv",
         alignment="predictions.diamond.lineages.tsv",
     output:
-        taxonomy="predictions.taxonomy.raw.tsv",
+        taxonomy=temp("predictions.taxonomy.raw.tsv"),
+        reasons=temp("predictions.unassigned_reasons.assign_taxonomy.tsv"),
     log:
         "logs/assign_taxonomy.log",
     benchmark:

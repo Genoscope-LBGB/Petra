@@ -22,18 +22,34 @@ rule whokaryote:
 
 
 rule control_taxonomy_with_whokaryote:
-    """Remove PETRA assignments that disagree with Whokaryote."""
+    """Report PETRA assignments that disagree with Whokaryote."""
     input:
         raw_taxonomy="predictions.taxonomy.raw.tsv",
         whokaryote_predictions="predictions.whokaryote.tsv",
     output:
-        taxonomy="predictions.final.tsv",
+        reasons=temp("predictions.unassigned_reasons.whokaryote.tsv"),
     log:
         "logs/control_taxonomy_with_whokaryote.log",
     benchmark:
         "benchmarks/control_taxonomy_with_whokaryote.tsv"
     script:
         "../scripts/control_taxonomy_with_whokaryote.py"
+
+
+rule aggregate_taxonomy:
+    """Combine raw taxonomy and tool-specific reasons into the final table."""
+    input:
+        raw_taxonomy="predictions.taxonomy.raw.tsv",
+        assignment_reasons="predictions.unassigned_reasons.assign_taxonomy.tsv",
+        whokaryote_reasons="predictions.unassigned_reasons.whokaryote.tsv",
+    output:
+        taxonomy="predictions.final.tsv",
+    log:
+        "logs/aggregate_taxonomy.log",
+    benchmark:
+        "benchmarks/aggregate_taxonomy.tsv"
+    script:
+        "../scripts/aggregate_taxonomy.py"
 
 
 rule split_assembly_by_domain:

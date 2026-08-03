@@ -235,6 +235,7 @@ def assign_taxonomy(
     cluster_sizes: Path,
     alignment: Path,
     destination: Path,
+    reasons_destination: Path,
     alpha: float = 0.5,
     max_bases_per_aligned_gene: int = 50_000,
 ) -> None:
@@ -267,13 +268,17 @@ def assign_taxonomy(
             votes[taxon] += 1
 
     assigned_sequences = 0
-    with destination.open("w", encoding="utf-8") as output_handle:
+    with (
+        destination.open("w", encoding="utf-8") as output_handle,
+        reasons_destination.open("w", encoding="utf-8") as reasons_handle,
+    ):
         output_handle.write(
             "sequence_name\tnumber_of_aligned_clusters\t"
             "number_of_genes_in_aligned_clusters\t"
-            + "\t".join((*TAXONOMIC_RANKS, _REASON_COLUMN))
+            + "\t".join(TAXONOMIC_RANKS)
             + "\n"
         )
+        reasons_handle.write(f"sequence_name\t{_REASON_COLUMN}\n")
         for sequence_id in sequence_ids:
             total = assignment_counts[sequence_id]
             aligned_gene_count = aligned_gene_counts[sequence_id]
@@ -306,9 +311,10 @@ def assign_taxonomy(
                 assigned_sequences += 1
             output_handle.write(
                 f"{sequence_id}\t{total}\t{aligned_gene_count}\t"
-                + "\t".join((*lineage, reason))
+                + "\t".join(lineage)
                 + "\n"
             )
+            reasons_handle.write(f"{sequence_id}\t{reason}\n")
 
     print(
         f"Assigned taxonomy to {assigned_sequences} of {len(sequence_ids)} assembly "
@@ -329,6 +335,7 @@ if "snakemake" in globals():
                     Path(workflow.input.cluster_sizes),
                     Path(workflow.input.alignment),
                     Path(workflow.output.taxonomy),
+                    Path(workflow.output.reasons),
                     float(workflow.params.alpha),
                     int(workflow.params.max_bases_per_aligned_gene),
                 )
