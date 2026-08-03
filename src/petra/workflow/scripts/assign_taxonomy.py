@@ -273,7 +273,7 @@ def assign_taxonomy(
         reasons_destination.open("w", encoding="utf-8") as reasons_handle,
     ):
         output_handle.write(
-            "sequence_name\tnumber_of_aligned_clusters\t"
+            "sequence_name\tsequence_length\tnumber_of_aligned_clusters\t"
             "number_of_genes_in_aligned_clusters\t"
             + "\t".join(TAXONOMIC_RANKS)
             + "\n"
@@ -310,9 +310,8 @@ def assign_taxonomy(
             if any(taxon != _MISSING_TAXON for taxon in lineage):
                 assigned_sequences += 1
             output_handle.write(
-                f"{sequence_id}\t{total}\t{aligned_gene_count}\t"
-                + "\t".join(lineage)
-                + "\n"
+                f"{sequence_id}\t{sequence_lengths[sequence_id]}\t{total}\t"
+                f"{aligned_gene_count}\t" + "\t".join(lineage) + "\n"
             )
             reasons_handle.write(f"{sequence_id}\t{reason}\n")
 

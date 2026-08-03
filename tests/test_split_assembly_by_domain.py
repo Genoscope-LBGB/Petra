@@ -111,6 +111,8 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
     def _write_taxonomy(destination: Path, rows: list[tuple[str, str, str]]) -> None:
         header = [
             "sequence_name",
+            "sequence_length",
+            "median_coverage",
             "number_of_aligned_clusters",
             "number_of_genes_in_aligned_clusters",
             *TAXONOMIC_RANKS,
@@ -123,6 +125,8 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
                 writer.writerow(
                     [
                         sequence_id,
+                        "2",
+                        "3.5",
                         "1",
                         "1",
                         domain,

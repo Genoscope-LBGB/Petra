@@ -11,6 +11,7 @@ _NO_REASON = "-"
 _WHOKARYOTE_REASON = "whokaryote"
 _METADATA_COLUMNS = (
     "sequence_name",
+    "sequence_length",
     "number_of_aligned_clusters",
     "number_of_genes_in_aligned_clusters",
 )

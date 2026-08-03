@@ -7,13 +7,14 @@ from typing import TextIO
 
 from assign_taxonomy import TAXONOMIC_RANKS
 
-_TAXONOMY_COLUMNS = (
+_METADATA_COLUMNS = (
     "sequence_name",
+    "sequence_length",
+    "median_coverage",
     "number_of_aligned_clusters",
     "number_of_genes_in_aligned_clusters",
-    *TAXONOMIC_RANKS,
-    "unassigned_reason",
 )
+_TAXONOMY_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS, "unassigned_reason")
 _OUTPUT_BY_DOMAIN = {
     "Eukaryota": "eukaryota",
     "Bacteria": "bacteria",
@@ -49,11 +50,13 @@ def _domain_assignments(source: Path) -> dict[str, str]:
                     f"at line {line_number} in {source}."
                 )
             try:
-                assignments[sequence_id] = _OUTPUT_BY_DOMAIN[row[3]]
+                assignments[sequence_id] = _OUTPUT_BY_DOMAIN[
+                    row[len(_METADATA_COLUMNS)]
+                ]
             except KeyError as error:
                 raise ValueError(
-                    f"Unexpected final domain {row[3]!r} for sequence "
-                    f"{sequence_id!r} at line {line_number} in {source}."
+                    f"Unexpected final domain {row[len(_METADATA_COLUMNS)]!r} for "
+                    f"sequence {sequence_id!r} at line {line_number} in {source}."
                 ) from error
     return assignments
 

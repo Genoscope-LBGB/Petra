@@ -10,10 +10,12 @@ _NO_REASON = "-"
 _WHOKARYOTE_REASON = "whokaryote"
 _METADATA_COLUMNS = (
     "sequence_name",
+    "sequence_length",
     "number_of_aligned_clusters",
     "number_of_genes_in_aligned_clusters",
 )
 _TAXONOMY_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS)
+_COVERAGE_COLUMNS = ("sequence_name", "median_coverage")
 _REASON_COLUMNS = ("sequence_name", "unassigned_reason")
 
 
@@ -43,12 +45,40 @@ def _reasons(source: Path) -> dict[str, str]:
     return reasons
 
 
+def _median_coverages(source: Path) -> dict[str, str]:
+    coverages: dict[str, str] = {}
+    with source.open(encoding="utf-8", newline="") as input_handle:
+        reader = csv.reader(input_handle, delimiter="\t")
+        header = tuple(next(reader, ()))
+        if header != _COVERAGE_COLUMNS:
+            raise ValueError(
+                f"Invalid coverage header in {source}: expected "
+                f"{_COVERAGE_COLUMNS!r}, found {header!r}."
+            )
+        for line_number, row in enumerate(reader, start=2):
+            if len(row) != len(_COVERAGE_COLUMNS) or not all(row):
+                raise ValueError(
+                    f"Invalid median coverage at line {line_number} in {source}: "
+                    "expected two non-empty tab-separated columns."
+                )
+            sequence_id, median_coverage = row
+            if sequence_id in coverages:
+                raise ValueError(
+                    f"Duplicate median coverage for sequence {sequence_id!r} at "
+                    f"line {line_number} in {source}."
+                )
+            coverages[sequence_id] = median_coverage
+    return coverages
+
+
 def aggregate_taxonomy(
     raw_taxonomy: Path,
+    coverage: Path,
     assignment_reasons: Path,
     whokaryote_reasons: Path,
     destination: Path,
 ) -> None:
+    remaining_coverages = _median_coverages(coverage)
     remaining_assignment_reasons = _reasons(assignment_reasons)
     remaining_whokaryote_reasons = _reasons(whokaryote_reasons)
     seen_sequence_ids: set[str] = set()
@@ -65,7 +95,15 @@ def aggregate_taxonomy(
                 f"Invalid raw taxonomy header in {raw_taxonomy}: expected "
                 f"{_TAXONOMY_COLUMNS!r}, found {header!r}."
             )
-        writer.writerow((*header, _REASON_COLUMNS[1]))
+        writer.writerow(
+            (
+                header[0],
+                header[1],
+                _COVERAGE_COLUMNS[1],
+                *header[2:],
+                _REASON_COLUMNS[1],
+            )
+        )
 
         for line_number, row in enumerate(reader, start=2):
             if len(row) != len(_TAXONOMY_COLUMNS) or not row[0]:
@@ -82,6 +120,12 @@ def aggregate_taxonomy(
                 )
             seen_sequence_ids.add(sequence_id)
 
+            try:
+                median_coverage = remaining_coverages.pop(sequence_id)
+            except KeyError as error:
+                raise ValueError(
+                    f"Median coverages are missing sequence {sequence_id!r}."
+                ) from error
             try:
                 assignment_reason = remaining_assignment_reasons.pop(sequence_id)
             except KeyError as error:
@@ -112,8 +156,19 @@ def aggregate_taxonomy(
                 reason = whokaryote_reason
             else:
                 reason = assignment_reason
-            writer.writerow((*row, reason))
+            writer.writerow(
+                (row[0], row[1], median_coverage, *row[2:], reason)
+            )
 
+    unknown_coverage_ids = remaining_coverages.keys()
+    if unknown_coverage_ids:
+        formatted_ids = ", ".join(
+            repr(identifier) for identifier in sorted(unknown_coverage_ids)
+        )
+        raise ValueError(
+            "Median coverages contain sequence identifiers absent from the raw "
+            f"taxonomy table: {formatted_ids}."
+        )
     unknown_assignment_ids = remaining_assignment_reasons.keys()
     if unknown_assignment_ids:
         formatted_ids = ", ".join(
@@ -133,7 +188,10 @@ def aggregate_taxonomy(
             f"taxonomy table: {formatted_ids}."
         )
 
-    print(f"Aggregated taxonomy and unassigned reasons for {len(seen_sequence_ids)} sequences.")
+    print(
+        "Aggregated sequence metadata, taxonomy, and unassigned reasons for "
+        f"{len(seen_sequence_ids)} sequences."
+    )
 
 
 if "snakemake" in globals():
@@ -144,6 +202,7 @@ if "snakemake" in globals():
             try:
                 aggregate_taxonomy(
                     Path(workflow.input.raw_taxonomy),
+                    Path(workflow.input.coverage),
                     Path(workflow.input.assignment_reasons),
                     Path(workflow.input.whokaryote_reasons),
                     Path(workflow.output.taxonomy),

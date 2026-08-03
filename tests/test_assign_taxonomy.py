@@ -85,18 +85,24 @@ class AssignTaxonomyTest(unittest.TestCase):
                 rows[0],
                 [
                     "sequence_name",
+                    "sequence_length",
                     "number_of_aligned_clusters",
                     "number_of_genes_in_aligned_clusters",
                     *TAXONOMIC_RANKS,
                 ],
             )
-            self.assertEqual(rows[1][0:5], ["contig_one", "4", "13", "Bacteria", "N/A"])
-            self.assertEqual(rows[1][5], "Pseudomonadota")
-            self.assertEqual(rows[2][0:5], ["contig_two", "2", "2", "N/A", "N/A"])
-            self.assertEqual(rows[2][5], "N/A")
+            self.assertEqual(
+                rows[1][0:6],
+                ["contig_one", "4", "4", "13", "Bacteria", "N/A"],
+            )
+            self.assertEqual(rows[1][6], "Pseudomonadota")
+            self.assertEqual(
+                rows[2][0:6], ["contig_two", "4", "2", "2", "N/A", "N/A"]
+            )
+            self.assertEqual(rows[2][6], "N/A")
             self.assertEqual(
                 rows[3],
-                ["no_genes", "0", "0", *(["N/A"] * len(TAXONOMIC_RANKS))],
+                ["no_genes", "4", "0", "0", *(["N/A"] * len(TAXONOMIC_RANKS))],
             )
             self.assertEqual(
                 [line.split("\t") for line in reasons.read_text().splitlines()],
@@ -135,7 +141,7 @@ class AssignTaxonomyTest(unittest.TestCase):
             )
 
             row = destination.read_text(encoding="utf-8").splitlines()[1].split("\t")
-            self.assertEqual(row[0:4], ["contig", "2", "2", "Bacteria"])
+            self.assertEqual(row[0:5], ["contig", "4", "2", "2", "Bacteria"])
             self.assertEqual(reasons.read_text().splitlines()[1], "contig\t-")
 
     def test_tied_best_hits_only_assign_ranks_on_which_they_agree(self) -> None:
@@ -164,8 +170,8 @@ class AssignTaxonomyTest(unittest.TestCase):
             )
 
             row = destination.read_text(encoding="utf-8").splitlines()[1].split("\t")
-            self.assertEqual(row[3], "Bacteria")
-            self.assertEqual(row[5], "N/A")
+            self.assertEqual(row[4], "Bacteria")
+            self.assertEqual(row[6], "N/A")
             self.assertEqual(reasons.read_text().splitlines()[1], "contig\t-")
 
     def test_does_not_report_consensus_failure_without_contig_level_votes(
@@ -257,9 +263,15 @@ class AssignTaxonomyTest(unittest.TestCase):
             )
 
             rows = [line.split("\t") for line in destination.read_text().splitlines()]
-            self.assertEqual(rows[1][0:4], ["at_threshold", "2", "2", "Bacteria"])
-            self.assertEqual(rows[2][0:4], ["rescued_by_members", "2", "3", "Bacteria"])
-            self.assertEqual(rows[3][0:4], ["below_threshold", "2", "2", "N/A"])
+            self.assertEqual(
+                rows[1][0:5], ["at_threshold", "8", "2", "2", "Bacteria"]
+            )
+            self.assertEqual(
+                rows[2][0:5], ["rescued_by_members", "9", "2", "3", "Bacteria"]
+            )
+            self.assertEqual(
+                rows[3][0:5], ["below_threshold", "9", "2", "2", "N/A"]
+            )
             self.assertEqual(
                 reasons.read_text().splitlines()[1:],
                 [

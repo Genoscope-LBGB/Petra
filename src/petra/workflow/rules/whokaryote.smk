@@ -4,7 +4,7 @@ rule whokaryote:
         assembly=config["assembly"],
         gff="predictions.gff",
     output:
-        predictions="predictions.whokaryote.tsv",
+        predictions=temp("predictions.whokaryote.tsv"),
     log:
         "logs/whokaryote.log",
     benchmark:
@@ -40,6 +40,7 @@ rule aggregate_taxonomy:
     """Combine raw taxonomy and tool-specific reasons into the final table."""
     input:
         raw_taxonomy="predictions.taxonomy.raw.tsv",
+        coverage="predictions.coverage.tsv",
         assignment_reasons="predictions.unassigned_reasons.assign_taxonomy.tsv",
         whokaryote_reasons="predictions.unassigned_reasons.whokaryote.tsv",
     output:
