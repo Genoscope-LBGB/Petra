@@ -11,6 +11,7 @@ _WHOKARYOTE_REASON = "whokaryote"
 _METADATA_COLUMNS = (
     "sequence_name",
     "sequence_length",
+    "gc_percent",
     "number_of_aligned_clusters",
 )
 _TAXONOMY_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS)
@@ -98,8 +99,9 @@ def aggregate_taxonomy(
             (
                 header[0],
                 header[1],
+                header[2],
                 _COVERAGE_COLUMNS[1],
-                *header[2:],
+                *header[3:],
                 _REASON_COLUMNS[1],
             )
         )
@@ -156,7 +158,7 @@ def aggregate_taxonomy(
             else:
                 reason = assignment_reason
             writer.writerow(
-                (row[0], row[1], median_coverage, *row[2:], reason)
+                (row[0], row[1], row[2], median_coverage, *row[3:], reason)
             )
 
     unknown_coverage_ids = remaining_coverages.keys()

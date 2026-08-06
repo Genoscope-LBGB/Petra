@@ -112,6 +112,7 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
         header = [
             "sequence_name",
             "sequence_length",
+            "gc_percent",
             "median_coverage",
             "number_of_aligned_clusters",
             *TAXONOMIC_RANKS,
@@ -125,6 +126,7 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
                     [
                         sequence_id,
                         "2",
+                        "50.00",
                         "3.5",
                         "1",
                         domain,

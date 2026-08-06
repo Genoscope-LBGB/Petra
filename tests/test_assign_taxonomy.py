@@ -11,7 +11,7 @@ sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
 from assign_taxonomy import TAXONOMIC_RANKS, assign_taxonomy  # noqa: E402
 
-_DOMAIN_COLUMN = 3
+_DOMAIN_COLUMN = 4
 _PHYLUM_COLUMN = _DOMAIN_COLUMN + TAXONOMIC_RANKS.index("phylum")
 
 
@@ -30,16 +30,25 @@ class AssignTaxonomyTest(unittest.TestCase):
             [
                 "sequence_name",
                 "sequence_length",
+                "gc_percent",
                 "number_of_aligned_clusters",
                 *TAXONOMIC_RANKS,
             ],
         )
-        self.assertEqual(rows[1][0:4], ["contig", "4000", "10", "Bacteria"])
+        self.assertEqual(
+            rows[1][0:5], ["contig", "4000", "0.00", "10", "Bacteria"]
+        )
         self.assertEqual(rows[1][_PHYLUM_COLUMN], "Pseudomonadota")
         self.assertEqual(
-            rows[2], ["no_genes", "100", "0", *(["N/A"] * len(TAXONOMIC_RANKS))]
+            rows[2],
+            ["no_genes", "100", "0.00", "0", *(["N/A"] * len(TAXONOMIC_RANKS))],
         )
         self.assertEqual(reasons[1:], [["contig", "-"], ["no_genes", "-"]])
+
+    def test_reports_gc_percent_for_mixed_case_multiline_sequences(self) -> None:
+        rows, _ = self._assign({"contig": "aCgT\nNNgc"}, [], [])
+
+        self.assertEqual(rows[1][0:4], ["contig", "8", "50.00", "0"])
 
     def test_unanimous_votes_need_a_minimum_number_of_clusters(self) -> None:
         bacteria = self._lineage(domain="Bacteria")
@@ -116,7 +125,9 @@ class AssignTaxonomyTest(unittest.TestCase):
             {"contig": 100}, self._protein_ids("contig", 3), hits
         )
 
-        self.assertEqual(rows[1][0:4], ["contig", "100", "3", "Bacteria"])
+        self.assertEqual(
+            rows[1][0:5], ["contig", "100", "0.00", "3", "Bacteria"]
+        )
         self.assertEqual(reasons[1], ["contig", "-"])
 
     def test_tied_best_hits_only_vote_on_ranks_on_which_they_agree(self) -> None:
@@ -159,7 +170,7 @@ class AssignTaxonomyTest(unittest.TestCase):
 
     def _assign(
         self,
-        sequence_lengths: dict[str, int],
+        sequences: dict[str, int | str],
         protein_ids: list[str],
         hits: list[tuple[str, str, str]],
         **options: float,
@@ -174,8 +185,9 @@ class AssignTaxonomyTest(unittest.TestCase):
 
         assembly.write_text(
             "".join(
-                f">{sequence_id}\n{'A' * length}\n"
-                for sequence_id, length in sequence_lengths.items()
+                f">{sequence_id}\n"
+                f"{'A' * sequence if isinstance(sequence, int) else sequence}\n"
+                for sequence_id, sequence in sequences.items()
             ),
             encoding="utf-8",
         )

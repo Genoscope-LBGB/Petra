@@ -127,13 +127,14 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
             domain if rank == "domain" else ranks.get(rank, "N/A")
             for rank in TAXONOMIC_RANKS
         ]
-        return [sequence_id, "100", aligned_clusters, *lineage]
+        return [sequence_id, "100", "42.50", aligned_clusters, *lineage]
 
     @staticmethod
     def _write_raw(destination: Path, rows: list[list[str]]) -> None:
         header = [
             "sequence_name",
             "sequence_length",
+            "gc_percent",
             "number_of_aligned_clusters",
             *TAXONOMIC_RANKS,
         ]

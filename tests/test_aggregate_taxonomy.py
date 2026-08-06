@@ -68,6 +68,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 [
                     "sequence_name",
                     "sequence_length",
+                    "gc_percent",
                     "median_coverage",
                     "number_of_aligned_clusters",
                     *TAXONOMIC_RANKS,
@@ -75,16 +76,21 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 ],
             )
             self.assertEqual(
-                rows[1][0:5], ["assigned", "100", "10.5", "1", "Bacteria"]
+                rows[1][0:6],
+                ["assigned", "100", "42.50", "10.5", "1", "Bacteria"],
             )
             self.assertEqual(rows[1][-1], "-")
-            self.assertEqual(rows[2][0:5], ["low_confidence", "100", "0", "1", "N/A"])
+            self.assertEqual(
+                rows[2][0:6],
+                ["low_confidence", "100", "42.50", "0", "1", "N/A"],
+            )
             self.assertEqual(rows[2][-1], "low_confidence")
             self.assertEqual(
                 rows[3],
                 [
                     "disagreement",
                     "100",
+                    "42.50",
                     "3",
                     "1",
                     *(["N/A"] * len(TAXONOMIC_RANKS)),
@@ -120,6 +126,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
         return [
             sequence_id,
             "100",
+            "42.50",
             "1",
             domain,
             *(["N/A"] * (len(TAXONOMIC_RANKS) - 1)),
@@ -130,6 +137,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
         header = [
             "sequence_name",
             "sequence_length",
+            "gc_percent",
             "number_of_aligned_clusters",
             *TAXONOMIC_RANKS,
         ]

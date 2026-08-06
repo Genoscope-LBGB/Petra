@@ -34,6 +34,13 @@ _CONFIDENCE_Z = NormalDist().inv_cdf(_CONFIDENCE_LEVEL)
 
 
 @dataclass
+class AssemblySequence:
+    length: int = 0
+    gc_bases: int = 0
+
+
+
+@dataclass
 class ProteinAssignment:
     bitscore: float
     lineages: list[tuple[str, ...]]
@@ -60,9 +67,9 @@ def _assembly_sequence_id(protein_id: str) -> str:
     return sequence_id
 
 
-def _assembly_sequences(source: Path) -> dict[str, int]:
-    sequence_lengths: dict[str, int] = {}
-    current_sequence_id: str | None = None
+def _assembly_sequences(source: Path) -> dict[str, AssemblySequence]:
+    sequences: dict[str, AssemblySequence] = {}
+    current_sequence: AssemblySequence | None = None
     with source.open(encoding="utf-8") as input_handle:
         for line_number, line in enumerate(input_handle, start=1):
             if line.startswith(">"):
@@ -72,20 +79,22 @@ def _assembly_sequences(source: Path) -> dict[str, int]:
                         f"Invalid FASTA header at line {line_number} in {source}: "
                         "expected a sequence identifier."
                     )
-                if sequence_id in sequence_lengths:
+                if sequence_id in sequences:
                     raise ValueError(
                         f"Duplicate assembly sequence identifier: {sequence_id!r}."
                     )
-                sequence_lengths[sequence_id] = 0
-                current_sequence_id = sequence_id
+                current_sequence = AssemblySequence()
+                sequences[sequence_id] = current_sequence
             elif line.strip():
-                if current_sequence_id is None:
+                if current_sequence is None:
                     raise ValueError(
                         f"Invalid assembly FASTA at line {line_number}: "
                         "sequence data occurs before the first header."
                     )
-                sequence_lengths[current_sequence_id] += len(line.strip())
-    return sequence_lengths
+                sequence = line.strip()
+                current_sequence.length += len(sequence)
+                current_sequence.gc_bases += sum(base in "GCgc" for base in sequence)
+    return sequences
 
 
 def _clustered_proteins(source: Path, assembly_ids: set[str]) -> dict[str, str]:
@@ -209,9 +218,9 @@ def assign_taxonomy(
             "The alpha-majority threshold must be greater than 0 and at most 1."
         )
 
-    sequence_lengths = _assembly_sequences(assembly)
-    sequence_ids = list(sequence_lengths)
-    protein_sequences = _clustered_proteins(proteins, set(sequence_lengths))
+    sequences = _assembly_sequences(assembly)
+    sequence_ids = list(sequences)
+    protein_sequences = _clustered_proteins(proteins, set(sequences))
     protein_assignments = _alignment_assignments(alignment, protein_sequences)
 
     rank_votes: dict[str, list[Counter[str]]] = {}
@@ -233,7 +242,8 @@ def assign_taxonomy(
         reasons_destination.open("w", encoding="utf-8") as reasons_handle,
     ):
         output_handle.write(
-            "sequence_name\tsequence_length\tnumber_of_aligned_clusters\t"
+            "sequence_name\tsequence_length\tgc_percent\t"
+            "number_of_aligned_clusters\t"
             + "\t".join(TAXONOMIC_RANKS)
             + "\n"
         )
@@ -264,8 +274,12 @@ def assign_taxonomy(
                     )
             if any(taxon != _MISSING_TAXON for taxon in lineage):
                 assigned_sequences += 1
+            sequence = sequences[sequence_id]
+            gc_percent = (
+                100 * sequence.gc_bases / sequence.length if sequence.length else 0
+            )
             output_handle.write(
-                f"{sequence_id}\t{sequence_lengths[sequence_id]}\t{total}\t"
+                f"{sequence_id}\t{sequence.length}\t{gc_percent:.2f}\t{total}\t"
                 + "\t".join(lineage)
                 + "\n"
             )

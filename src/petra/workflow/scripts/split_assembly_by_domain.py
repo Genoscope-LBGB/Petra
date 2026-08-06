@@ -10,6 +10,7 @@ from assign_taxonomy import TAXONOMIC_RANKS
 _METADATA_COLUMNS = (
     "sequence_name",
     "sequence_length",
+    "gc_percent",
     "median_coverage",
     "number_of_aligned_clusters",
 )
