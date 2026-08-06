@@ -114,7 +114,6 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
             "sequence_length",
             "median_coverage",
             "number_of_aligned_clusters",
-            "number_of_genes_in_aligned_clusters",
             *TAXONOMIC_RANKS,
             "unassigned_reason",
         ]
@@ -127,7 +126,6 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
                         sequence_id,
                         "2",
                         "3.5",
-                        "1",
                         "1",
                         domain,
                         *(["N/A"] * (len(TAXONOMIC_RANKS) - 1)),

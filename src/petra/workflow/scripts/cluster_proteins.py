@@ -134,65 +134,6 @@ def _fasta_records(source: Path) -> Iterator[list[bytes]]:
         yield record
 
 
-def _cluster_sizes(source: Path) -> dict[str, int]:
-    sizes: dict[str, int] = {}
-    cluster_started = False
-    representative_id: str | None = None
-    member_count = 0
-
-    def finish_cluster(line_number: int) -> None:
-        if not cluster_started:
-            return
-        if representative_id is None:
-            raise ValueError(
-                f"CD-HIT cluster ending at line {line_number} in {source} has no "
-                "representative."
-            )
-        if representative_id in sizes:
-            raise ValueError(
-                f"Duplicate CD-HIT cluster representative {representative_id!r} "
-                f"in {source}."
-            )
-        sizes[representative_id] = member_count
-
-    with source.open(encoding="utf-8") as input_handle:
-        for line_number, line in enumerate(input_handle, start=1):
-            line = line.rstrip("\n")
-            if line.startswith(">Cluster "):
-                finish_cluster(line_number - 1)
-                cluster_started = True
-                representative_id = None
-                member_count = 0
-                continue
-            if not cluster_started or not line:
-                raise ValueError(
-                    f"Invalid CD-HIT cluster membership at line {line_number} in "
-                    f"{source}."
-                )
-
-            member_count += 1
-            if line.rstrip().endswith("*"):
-                if representative_id is not None:
-                    raise ValueError(
-                        f"Multiple representatives in one CD-HIT cluster at line "
-                        f"{line_number} in {source}."
-                    )
-                _, separator, description = line.partition(", >")
-                identifier, terminator, _ = description.partition("...")
-                identifier = identifier.split(maxsplit=1)[0]
-                if not separator or not terminator or not identifier:
-                    raise ValueError(
-                        f"Invalid CD-HIT representative at line {line_number} in "
-                        f"{source}."
-                    )
-                representative_id = identifier
-
-    finish_cluster(line_number if cluster_started else 0)
-    if not sizes:
-        raise ValueError(f"CD-HIT produced no cluster memberships in {source}.")
-    return sizes
-
-
 def _record_identifier(record: list[bytes]) -> str:
     identifier = record[0][1:].split(maxsplit=1)[0]
     if not identifier:
@@ -202,15 +143,13 @@ def _record_identifier(record: list[bytes]) -> str:
 
 def _sample_clusters(
     source: Path,
-    cluster_sizes: dict[str, int],
     destination: BinaryIO,
-    sizes_destination: TextIO,
     maximum: int,
     sequence_id: str,
 ) -> None:
     seed = int.from_bytes(hashlib.sha256(sequence_id.encode("utf-8")).digest())
     generator = random.Random(seed)
-    reservoir: list[tuple[int, list[bytes], str, int]] = []
+    reservoir: list[tuple[int, list[bytes]]] = []
     seen_ids: set[str] = set()
     total = 0
 
@@ -222,13 +161,7 @@ def _sample_clusters(
                 f"Duplicate clustered protein identifier: {representative_id!r}."
             )
         seen_ids.add(representative_id)
-        try:
-            cluster_size = cluster_sizes[representative_id]
-        except KeyError as error:
-            raise ValueError(
-                f"Clustered protein {representative_id!r} has no CD-HIT membership."
-            ) from error
-        candidate = (index, record, representative_id, cluster_size)
+        candidate = (index, record)
         if index < maximum:
             reservoir.append(candidate)
         else:
@@ -240,24 +173,13 @@ def _sample_clusters(
         raise ValueError(
             f"CD-HIT produced no clusters for assembly sequence {sequence_id!r}."
         )
-    if seen_ids != cluster_sizes.keys():
-        unknown_ids = cluster_sizes.keys() - seen_ids
-        formatted_ids = ", ".join(
-            repr(identifier) for identifier in sorted(unknown_ids)
-        )
-        raise ValueError(
-            "CD-HIT memberships contain representatives absent from the clustered "
-            f"protein FASTA: {formatted_ids}."
-        )
-    for _, record, representative_id, cluster_size in sorted(reservoir):
+    for _, record in sorted(reservoir):
         destination.writelines(record)
-        sizes_destination.write(f"{representative_id}\t{cluster_size}\n")
 
 
 def cluster_proteins(
     source: Path,
     destination: Path,
-    sizes_destination: Path,
     workers: int,
     max_clusters: int,
     runner: Callable[[ProteinGroup], Path] = _run_cdhit,
@@ -272,10 +194,8 @@ def cluster_proteins(
         directory = Path(temporary_directory)
         with (
             destination.open("wb") as output_handle,
-            sizes_destination.open("w", encoding="utf-8") as sizes_handle,
             ThreadPoolExecutor(max_workers=workers) as executor,
         ):
-            sizes_handle.write("cluster_representative\tnumber_of_genes_in_cluster\n")
             for batch in _group_batches(source, directory, workers):
                 clustered_outputs = executor.map(runner, batch)
                 for group, clustered in zip(batch, clustered_outputs, strict=True):
@@ -288,9 +208,7 @@ def cluster_proteins(
                         log.flush()
                     _sample_clusters(
                         clustered,
-                        _cluster_sizes(Path(f"{clustered}.clstr")),
                         output_handle,
-                        sizes_handle,
                         max_clusters,
                         group.sequence_id,
                     )
@@ -305,7 +223,6 @@ if "snakemake" in globals():
                 cluster_proteins(
                     Path(workflow.input.proteins),
                     Path(workflow.output.proteins),
-                    Path(workflow.output.cluster_sizes),
                     int(workflow.threads),
                     int(workflow.params.maximum),
                     log=log_handle,

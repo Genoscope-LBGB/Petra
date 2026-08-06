@@ -46,6 +46,14 @@ def _require_executables() -> None:
         )
 
 
+def _validate_alpha(value: float) -> float:
+    if value <= 0:
+        raise typer.BadParameter(
+            "The alpha-majority threshold must be greater than 0."
+        )
+    return value
+
+
 app = typer.Typer(
     help="PETRA - Predicted protein-enabled Taxonomic Rank Assignment",
     context_settings=_HELP_CONTEXT,
@@ -198,20 +206,23 @@ def run(
             show_default=True,
         ),
     ] = 50,
-    max_bases_per_aligned_gene: Annotated[
-        int,
+    alpha: Annotated[
+        float,
         typer.Option(
-            "--max-bases-per-aligned-gene",
-            min=1,
+            "--alpha",
+            min=0.0,
+            max=1.0,
+            callback=_validate_alpha,
             help=(
-                "Maximum number of assembly-sequence base pairs allowed per gene "
-                "represented by an aligned protein cluster. Sequences below this "
-                "density are assigned to N/A."
+                "Minimum share of a sequence's aligned clusters that must support "
+                "a taxon for it to be assigned. The share must hold at the lower "
+                "bound of its 95% confidence interval, so sequences with few "
+                "aligned clusters stay unassigned."
             ),
             rich_help_panel="Taxonomic assignment",
             show_default=True,
         ),
-    ] = 200_000,
+    ] = 0.5,
     output: Annotated[
         Path,
         typer.Option(
@@ -250,7 +261,7 @@ def run(
         "max_low_complexity": max_low_complexity,
         "max_clusters_per_sequence": max_clusters_per_sequence,
         "max_target_occurrences": max_target_occurrences,
-        "max_bases_per_aligned_gene": max_bases_per_aligned_gene,
+        "alpha": alpha,
     }
     try:
         _require_executables()

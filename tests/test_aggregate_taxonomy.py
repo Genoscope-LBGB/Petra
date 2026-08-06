@@ -25,7 +25,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 raw_taxonomy,
                 [
                     self._taxonomy_row("assigned", "Bacteria"),
-                    self._taxonomy_row("low_density", "N/A"),
+                    self._taxonomy_row("low_confidence", "N/A"),
                     self._taxonomy_row("disagreement", "Bacteria"),
                 ],
             )
@@ -34,14 +34,14 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 [
                     ("disagreement", "3"),
                     ("assigned", "10.5"),
-                    ("low_density", "0"),
+                    ("low_confidence", "0"),
                 ],
             )
             self._write_reasons(
                 assignment_reasons,
                 [
                     ("assigned", "-"),
-                    ("low_density", "gene_density"),
+                    ("low_confidence", "low_confidence"),
                     ("disagreement", "-"),
                 ],
             )
@@ -49,7 +49,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 whokaryote_reasons,
                 [
                     ("assigned", "-"),
-                    ("low_density", "-"),
+                    ("low_confidence", "-"),
                     ("disagreement", "whokaryote"),
                 ],
             )
@@ -70,26 +70,22 @@ class AggregateTaxonomyTest(unittest.TestCase):
                     "sequence_length",
                     "median_coverage",
                     "number_of_aligned_clusters",
-                    "number_of_genes_in_aligned_clusters",
                     *TAXONOMIC_RANKS,
                     "unassigned_reason",
                 ],
             )
             self.assertEqual(
-                rows[1][0:6], ["assigned", "100", "10.5", "1", "1", "Bacteria"]
+                rows[1][0:5], ["assigned", "100", "10.5", "1", "Bacteria"]
             )
             self.assertEqual(rows[1][-1], "-")
-            self.assertEqual(
-                rows[2][0:6], ["low_density", "100", "0", "1", "1", "N/A"]
-            )
-            self.assertEqual(rows[2][-1], "gene_density")
+            self.assertEqual(rows[2][0:5], ["low_confidence", "100", "0", "1", "N/A"])
+            self.assertEqual(rows[2][-1], "low_confidence")
             self.assertEqual(
                 rows[3],
                 [
                     "disagreement",
                     "100",
                     "3",
-                    "1",
                     "1",
                     *(["N/A"] * len(TAXONOMIC_RANKS)),
                     "whokaryote",
@@ -125,7 +121,6 @@ class AggregateTaxonomyTest(unittest.TestCase):
             sequence_id,
             "100",
             "1",
-            "1",
             domain,
             *(["N/A"] * (len(TAXONOMIC_RANKS) - 1)),
         ]
@@ -136,7 +131,6 @@ class AggregateTaxonomyTest(unittest.TestCase):
             "sequence_name",
             "sequence_length",
             "number_of_aligned_clusters",
-            "number_of_genes_in_aligned_clusters",
             *TAXONOMIC_RANKS,
         ]
         destination.write_text(

@@ -62,13 +62,13 @@ rule replace_taxids_with_lineages:
 rule assign_taxonomy:
     """
     Assign each assembly sequence by alpha-majority of its protein assignments.
-    Discards sequences with fewer genes in aligned clusters than required by the
-    configured maximum bases per aligned gene.
+    A rank stays unassigned unless its majority also holds at the lower bound of
+    its confidence interval, so sequences supported by few aligned clusters are
+    left unassigned rather than assigned from thin evidence.
     """
     input:
         assembly=config["assembly"],
         proteins="predictions.clustered.faa",
-        cluster_sizes="predictions.cluster_sizes.tsv",
         alignment="predictions.diamond.lineages.tsv",
     output:
         taxonomy=temp("predictions.taxonomy.raw.tsv"),
@@ -78,7 +78,6 @@ rule assign_taxonomy:
     benchmark:
         "benchmarks/assign_taxonomy.tsv"
     params:
-        alpha=0.5,
-        max_bases_per_aligned_gene=config["max_bases_per_aligned_gene"],
+        alpha=config["alpha"],
     script:
         "../scripts/assign_taxonomy.py"

@@ -1,10 +1,10 @@
-import csv
 import math
 import traceback
 from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import NormalDist
 from typing import Iterator
 
 TAXONOMIC_RANKS = (
@@ -27,12 +27,10 @@ TAXONOMIC_RANKS = (
 _MISSING_TAXON = "N/A"
 _REASON_COLUMN = "unassigned_reason"
 _NO_REASON = "-"
-_GENE_DENSITY_REASON = "gene_density"
+_LOW_CONFIDENCE_REASON = "low_confidence"
 _NO_CONSENSUS_REASON = "no_consensus"
-_CLUSTER_SIZE_COLUMNS = (
-    "cluster_representative",
-    "number_of_genes_in_cluster",
-)
+_CONFIDENCE_LEVEL = 0.95
+_CONFIDENCE_Z = NormalDist().inv_cdf(_CONFIDENCE_LEVEL)
 
 
 @dataclass
@@ -105,58 +103,6 @@ def _clustered_proteins(source: Path, assembly_ids: set[str]) -> dict[str, str]:
     return protein_sequences
 
 
-def _cluster_sizes(source: Path, protein_sequences: dict[str, str]) -> dict[str, int]:
-    sizes: dict[str, int] = {}
-    with source.open(encoding="utf-8", newline="") as input_handle:
-        reader = csv.reader(input_handle, delimiter="\t")
-        header = tuple(next(reader, ()))
-        if header != _CLUSTER_SIZE_COLUMNS:
-            raise ValueError(
-                f"Invalid cluster-size header in {source}: expected "
-                f"{_CLUSTER_SIZE_COLUMNS!r}, found {header!r}."
-            )
-        for line_number, row in enumerate(reader, start=2):
-            if len(row) != len(_CLUSTER_SIZE_COLUMNS) or not all(row):
-                raise ValueError(
-                    f"Invalid cluster size at line {line_number} in {source}: "
-                    "expected two non-empty tab-separated columns."
-                )
-            representative_id, size_text = row
-            if representative_id not in protein_sequences:
-                raise ValueError(
-                    f"Cluster size at line {line_number} refers to unknown clustered "
-                    f"protein {representative_id!r}."
-                )
-            if representative_id in sizes:
-                raise ValueError(
-                    f"Duplicate cluster size for {representative_id!r} at line "
-                    f"{line_number} in {source}."
-                )
-            try:
-                size = int(size_text)
-            except ValueError as error:
-                raise ValueError(
-                    f"Invalid cluster size at line {line_number} in {source}: "
-                    f"{size_text!r}."
-                ) from error
-            if size < 1:
-                raise ValueError(
-                    f"Invalid cluster size at line {line_number} in {source}: "
-                    "expected a positive integer."
-                )
-            sizes[representative_id] = size
-
-    missing_ids = protein_sequences.keys() - sizes.keys()
-    if missing_ids:
-        formatted_ids = ", ".join(
-            repr(identifier) for identifier in sorted(missing_ids)
-        )
-        raise ValueError(
-            "Clustered proteins are missing cluster sizes: " f"{formatted_ids}."
-        )
-    return sizes
-
-
 def _alignment_assignments(
     source: Path, protein_sequences: dict[str, str]
 ) -> dict[str, ProteinAssignment]:
@@ -211,7 +157,26 @@ def _protein_lineage(assignment: ProteinAssignment) -> tuple[str, ...]:
     return tuple(lineage)
 
 
-def _majority_taxon(votes: Counter[str], total: int, alpha: float) -> str:
+def _wilson_lower_bound(successes: int, total: int) -> float:
+    """Lower bound of the one-sided Wilson interval for a share of votes.
+
+    Shrinks the observed share towards zero by an amount that grows as the
+    number of votes shrinks, so a unanimous pair of clusters cannot carry the
+    same weight as a solid majority of hundreds.
+    """
+    share = successes / total
+    z_squared = _CONFIDENCE_Z**2
+    center = share + z_squared / (2 * total)
+    margin = _CONFIDENCE_Z * math.sqrt(
+        (share * (1 - share) + z_squared / (4 * total)) / total
+    )
+    return (center - margin) / (1 + z_squared / total)
+
+
+def _majority_taxon(
+    votes: Counter[str], total: int, alpha: float
+) -> tuple[str, bool]:
+    """Return the alpha-majority taxon and whether too few votes rejected it."""
     winner = _MISSING_TAXON
     highest_count = 0
     tied = False
@@ -225,40 +190,35 @@ def _majority_taxon(votes: Counter[str], total: int, alpha: float) -> str:
         elif count == highest_count:
             tied = True
     if tied or highest_count / total < alpha:
-        return _MISSING_TAXON
-    return winner
+        return _MISSING_TAXON, False
+    if _wilson_lower_bound(highest_count, total) < alpha:
+        return _MISSING_TAXON, True
+    return winner, False
 
 
 def assign_taxonomy(
     assembly: Path,
     proteins: Path,
-    cluster_sizes: Path,
     alignment: Path,
     destination: Path,
     reasons_destination: Path,
     alpha: float = 0.5,
-    max_bases_per_aligned_gene: int = 50_000,
 ) -> None:
     if not 0 < alpha <= 1:
         raise ValueError(
             "The alpha-majority threshold must be greater than 0 and at most 1."
         )
-    if max_bases_per_aligned_gene < 1:
-        raise ValueError("The maximum bases per aligned gene must be positive.")
 
     sequence_lengths = _assembly_sequences(assembly)
     sequence_ids = list(sequence_lengths)
     protein_sequences = _clustered_proteins(proteins, set(sequence_lengths))
-    protein_cluster_sizes = _cluster_sizes(cluster_sizes, protein_sequences)
     protein_assignments = _alignment_assignments(alignment, protein_sequences)
 
     rank_votes: dict[str, list[Counter[str]]] = {}
     assignment_counts: Counter[str] = Counter()
-    aligned_gene_counts: Counter[str] = Counter()
     for protein_id, assignment in protein_assignments.items():
         sequence_id = protein_sequences[protein_id]
         assignment_counts[sequence_id] += 1
-        aligned_gene_counts[sequence_id] += protein_cluster_sizes[protein_id]
         sequence_votes = rank_votes.setdefault(
             sequence_id, [Counter() for _ in TAXONOMIC_RANKS]
         )
@@ -274,28 +234,21 @@ def assign_taxonomy(
     ):
         output_handle.write(
             "sequence_name\tsequence_length\tnumber_of_aligned_clusters\t"
-            "number_of_genes_in_aligned_clusters\t"
             + "\t".join(TAXONOMIC_RANKS)
             + "\n"
         )
         reasons_handle.write(f"sequence_name\t{_REASON_COLUMN}\n")
         for sequence_id in sequence_ids:
             total = assignment_counts[sequence_id]
-            aligned_gene_count = aligned_gene_counts[sequence_id]
-            meets_density = (
-                aligned_gene_count > 0
-                and sequence_lengths[sequence_id]
-                <= aligned_gene_count * max_bases_per_aligned_gene
-            )
             reason = _NO_REASON
-            if total > 0 and not meets_density:
+            if total == 0:
                 lineage = [_MISSING_TAXON] * len(TAXONOMIC_RANKS)
-                reason = _GENE_DENSITY_REASON
-            elif meets_density:
+            else:
                 votes_by_rank = rank_votes[sequence_id]
-                lineage = [
+                majorities = [
                     _majority_taxon(votes, total, alpha) for votes in votes_by_rank
                 ]
+                lineage = [taxon for taxon, _ in majorities]
                 has_taxonomic_evidence = any(
                     taxon != _MISSING_TAXON
                     for votes in votes_by_rank
@@ -304,21 +257,23 @@ def assign_taxonomy(
                 if has_taxonomic_evidence and all(
                     taxon == _MISSING_TAXON for taxon in lineage
                 ):
-                    reason = _NO_CONSENSUS_REASON
-            else:
-                lineage = [_MISSING_TAXON] * len(TAXONOMIC_RANKS)
+                    reason = (
+                        _LOW_CONFIDENCE_REASON
+                        if any(rejected for _, rejected in majorities)
+                        else _NO_CONSENSUS_REASON
+                    )
             if any(taxon != _MISSING_TAXON for taxon in lineage):
                 assigned_sequences += 1
             output_handle.write(
                 f"{sequence_id}\t{sequence_lengths[sequence_id]}\t{total}\t"
-                f"{aligned_gene_count}\t" + "\t".join(lineage) + "\n"
+                + "\t".join(lineage)
+                + "\n"
             )
             reasons_handle.write(f"{sequence_id}\t{reason}\n")
 
     print(
         f"Assigned taxonomy to {assigned_sequences} of {len(sequence_ids)} assembly "
-        f"sequences from {len(protein_assignments)} aligned clusters representing "
-        f"{sum(aligned_gene_counts.values())} genes."
+        f"sequences from {len(protein_assignments)} aligned clusters."
     )
 
 
@@ -331,12 +286,10 @@ if "snakemake" in globals():
                 assign_taxonomy(
                     Path(workflow.input.assembly),
                     Path(workflow.input.proteins),
-                    Path(workflow.input.cluster_sizes),
                     Path(workflow.input.alignment),
                     Path(workflow.output.taxonomy),
                     Path(workflow.output.reasons),
                     float(workflow.params.alpha),
-                    int(workflow.params.max_bases_per_aligned_gene),
                 )
             except Exception:
                 traceback.print_exc()
