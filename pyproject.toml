@@ -38,6 +38,7 @@ classifiers = [
 
 [project.scripts]
 petra = "petra.cli:app"
+petra-compare = "petra.workflow.scripts.plot_summary_comparison:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/petra"]

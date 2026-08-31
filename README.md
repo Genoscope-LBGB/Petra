@@ -48,6 +48,23 @@ existing table without rerunning the workflow:
 python plot_summary_graph.py -i run-1/predictions.final.tsv -o summary.png
 ```
 
+### Comparing runs
+
+`petra-compare`puts the blobplot of several
+finished runs side by side to compare how
+assignments landed. Repeat `--directory` once per PETRA output directory and
+`--name` once per organism, in the same order:
+
+```console
+petra-compare \
+  --directory run-1 --name "Chelon auratus" \
+  --directory run-2 --name "Pachymatisma johnstonia" \
+  --directory run-3 --name "Jania squamata" \
+  --colors taxon_colors.tsv \
+  --font-size 12 \
+  --output comparison.png
+```
+
 ### Building the local DIAMOND database
 
 Build a taxonomy-aware DIAMOND database from local inputs:
