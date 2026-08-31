@@ -24,6 +24,16 @@ class SequencingTechnology(str, Enum):
     ONT = "ont"
 
 
+class SummaryPanel(str, Enum):
+    HEADER = "header"
+    GC_HISTOGRAM = "gc-histogram"
+    COVERAGE_HISTOGRAM = "coverage-histogram"
+    TAXONOMY_LEGEND = "taxonomy-legend"
+    LONGEST_SEQUENCES = "longest-sequences"
+    LENGTH_LEGEND = "length-legend"
+    ASSIGNMENT_STATUS = "assignment-status"
+
+
 def _require_executables() -> None:
     missing = [
         executable
@@ -223,6 +233,40 @@ def run(
             show_default=True,
         ),
     ] = 0.5,
+    summary_font_size: Annotated[
+        float,
+        typer.Option(
+            "--summary-font-size",
+            min=1.0,
+            help="Base font size of the summary graph in points.",
+            rich_help_panel="Summary graph",
+            show_default=True,
+        ),
+    ] = 10.0,
+    summary_colors: Annotated[
+        Path | None,
+        typer.Option(
+            "--summary-colors",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help=(
+                "Two-column TSV of taxonomic rank and color. Sequences are colored "
+                "with the deepest assigned rank found in the file instead of their "
+                "superkingdom; assigned sequences without a match are colored as "
+                "'other'."
+            ),
+            rich_help_panel="Summary graph",
+        ),
+    ] = None,
+    summary_disable_panel: Annotated[
+        list[SummaryPanel] | None,
+        typer.Option(
+            "--summary-disable-panel",
+            help="Summary graph panel to leave out; repeat to drop several.",
+            rich_help_panel="Summary graph",
+        ),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option(
@@ -262,6 +306,11 @@ def run(
         "max_clusters_per_sequence": max_clusters_per_sequence,
         "max_target_occurrences": max_target_occurrences,
         "alpha": alpha,
+        "summary_font_size": summary_font_size,
+        "summary_colors": summary_colors,
+        "summary_disabled_panels": [
+            panel.value for panel in summary_disable_panel or ()
+        ],
     }
     try:
         _require_executables()

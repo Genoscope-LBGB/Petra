@@ -2,8 +2,10 @@ include: "rules/gene_prediction.smk"
 include: "rules/diamond.smk"
 include: "rules/whokaryote.smk"
 include: "rules/coverage.smk"
+include: "rules/qc.smk"
 
 
 rule all:
     input:
-        "predictions.final.tsv"
+        "predictions.final.tsv",
+        "predictions.summary.png",
