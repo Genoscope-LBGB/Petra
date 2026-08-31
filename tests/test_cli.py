@@ -22,7 +22,7 @@ class RunCliTest(unittest.TestCase):
                 path.touch()
 
             with (
-                patch("petra.cli._require_mapping_executables"),
+                patch("petra.cli._require_executables"),
                 patch("petra.cli.launch_workflow", return_value=0) as launch,
             ):
                 result = CliRunner().invoke(
@@ -59,7 +59,7 @@ class RunCliTest(unittest.TestCase):
                 path.touch()
 
             with (
-                patch("petra.cli._require_mapping_executables"),
+                patch("petra.cli._require_executables"),
                 patch("petra.cli.launch_workflow", return_value=0) as launch,
             ):
                 result = CliRunner().invoke(
@@ -81,7 +81,7 @@ class RunCliTest(unittest.TestCase):
                 SequencingTechnology.PACBIO,
             )
 
-    def test_rejects_missing_mapping_executables_before_launch(self) -> None:
+    def test_rejects_missing_executables_before_launch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             assembly = directory / "assembly.fasta"
@@ -90,8 +90,11 @@ class RunCliTest(unittest.TestCase):
             for path in (assembly, diamond_db, reads):
                 path.touch()
 
+            def which_without_bedtools(executable: str) -> str | None:
+                return None if executable == "bedtools" else f"/usr/bin/{executable}"
+
             with (
-                patch("petra.cli.shutil.which", return_value=None),
+                patch("petra.cli.shutil.which", side_effect=which_without_bedtools),
                 patch("petra.cli.launch_workflow") as launch,
             ):
                 result = CliRunner().invoke(
@@ -109,7 +112,7 @@ class RunCliTest(unittest.TestCase):
 
             self.assertEqual(result.exit_code, 1)
             self.assertIn(
-                "Required mapping executables not found on PATH: minimap2, samtools.",
+                "Required executables not found on PATH: bedtools.",
                 result.output,
             )
             launch.assert_not_called()

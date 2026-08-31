@@ -6,8 +6,16 @@ include:
       module-snapshot: true
       other-branches-as-named: true
 
-stages: 
+stages:
+  - test
   - deploy
+
+test:
+  stage: test
+  image: python:3.13-slim
+  script:
+    - pip install --no-cache-dir -e ".[test]"
+    - python -m pytest
 
 deploy:
   stage: deploy

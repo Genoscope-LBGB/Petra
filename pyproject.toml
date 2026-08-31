@@ -36,6 +36,11 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10",
+]
+
 [project.scripts]
 petra = "petra.cli:app"
 petra-compare = "petra.workflow.scripts.plot_summary_comparison:run"
@@ -50,3 +55,6 @@ include = [
   "/README.md",
   "/pyproject.toml",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
