@@ -6,10 +6,4 @@ include: "rules/coverage.smk"
 
 rule all:
     input:
-        "predictions.final.tsv",
-        "predictions.coverage.tsv",
-        "predictions.eukaryota.fasta",
-        "predictions.bacteria.fasta",
-        "predictions.viruses.fasta",
-        "predictions.archaea.fasta",
-        "predictions.unassigned.fasta",
+        "predictions.final.tsv"
