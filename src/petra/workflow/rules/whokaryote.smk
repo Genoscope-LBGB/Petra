@@ -63,7 +63,7 @@ rule split_assembly_by_domain:
         bacteria=temp("predictions.bacteria.fasta"),
         viruses=temp("predictions.viruses.fasta"),
         archaea=temp("predictions.archaea.fasta"),
-        unassigned=tep("predictions.unassigned.fasta"),
+        unassigned=temp("predictions.unassigned.fasta"),
     log:
         "logs/split_assembly_by_domain.log",
     benchmark:
