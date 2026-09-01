@@ -46,7 +46,7 @@ rule median_coverage:
     input:
         coverage="coverage.bedgraph",
     output:
-        coverage="predictions.coverage.tsv",
+        coverage=temp("predictions.coverage.tsv"),
     log:
         "logs/median_coverage.log",
     benchmark:
