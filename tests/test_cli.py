@@ -12,111 +12,154 @@ from petra.database import DatabaseBuildError
 
 
 class RunCliTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.database = self.directory / "database"
+        self.database.mkdir()
+        (self.database / "petra.dmnd").touch()
+        self.assembly = self.directory / "assembly.fasta"
+        self.reads = self.directory / "reads.fastq"
+        for path in (self.assembly, self.reads):
+            path.touch()
+
     def test_accepts_repeated_long_reads_and_ont_technology(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            directory = Path(temporary_directory)
-            assembly = directory / "assembly.fasta"
-            diamond_db = directory / "petra.dmnd"
-            first_reads = directory / "first.fastq"
-            second_reads = directory / "second.fastq"
-            for path in (assembly, diamond_db, first_reads, second_reads):
-                path.touch()
+        second_reads = self.directory / "second.fastq"
+        second_reads.touch()
 
-            with (
-                patch("petra.cli._require_executables"),
-                patch("petra.cli.launch_workflow", return_value=0) as launch,
-            ):
-                result = CliRunner().invoke(
-                    app,
-                    [
-                        "run",
-                        "--assembly",
-                        str(assembly),
-                        "--diamond-db",
-                        str(diamond_db),
-                        "--long-reads",
-                        str(first_reads),
-                        "--long-reads",
-                        str(second_reads),
-                        "--technology",
-                        "ont",
-                    ],
-                )
-
-            self.assertEqual(result.exit_code, 0, result.output)
-            workflow_config = launch.call_args.kwargs["workflow_config"]
-            self.assertEqual(workflow_config["long_reads"], [first_reads, second_reads])
-            self.assertEqual(
-                workflow_config["sequencing_technology"], SequencingTechnology.ONT
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--database",
+                    str(self.database),
+                    "--long-reads",
+                    str(self.reads),
+                    "--long-reads",
+                    str(second_reads),
+                    "--technology",
+                    "ont",
+                ],
             )
 
-    def test_defaults_to_pacbio_technology(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            directory = Path(temporary_directory)
-            assembly = directory / "assembly.fasta"
-            diamond_db = directory / "petra.dmnd"
-            reads = directory / "reads.fastq"
-            for path in (assembly, diamond_db, reads):
-                path.touch()
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertEqual(workflow_config["long_reads"], [self.reads, second_reads])
+        self.assertEqual(
+            workflow_config["sequencing_technology"], SequencingTechnology.ONT
+        )
 
-            with (
-                patch("petra.cli._require_executables"),
-                patch("petra.cli.launch_workflow", return_value=0) as launch,
-            ):
-                result = CliRunner().invoke(
-                    app,
-                    [
-                        "run",
-                        "--assembly",
-                        str(assembly),
-                        "--diamond-db",
-                        str(diamond_db),
-                        "--long-reads",
-                        str(reads),
-                    ],
-                )
-
-            self.assertEqual(result.exit_code, 0, result.output)
-            self.assertEqual(
-                launch.call_args.kwargs["workflow_config"]["sequencing_technology"],
-                SequencingTechnology.PACBIO,
+    def test_resolves_the_diamond_database_inside_the_directory(self) -> None:
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "-i",
+                    str(self.assembly),
+                    "-d",
+                    str(self.database),
+                    "-r",
+                    str(self.reads),
+                ],
             )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertEqual(
+            workflow_config["diamond_db"], self.database / "petra.dmnd"
+        )
+        self.assertEqual(
+            workflow_config["sequencing_technology"], SequencingTechnology.PACBIO
+        )
+
+    def test_rejects_a_directory_without_the_diamond_database(self) -> None:
+        empty = self.directory / "empty"
+        empty.mkdir()
+
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--database",
+                    str(empty),
+                    "--long-reads",
+                    str(self.reads),
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn(
+            f"petra.dmnd not found in {empty}. Build it with 'petra build-db "
+            f"--output {empty}'.",
+            _flatten(result.output),
+        )
+        launch.assert_not_called()
+
+    def test_rejects_a_diamond_database_file_as_the_database(self) -> None:
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--database",
+                    str(self.database / "petra.dmnd"),
+                    "--long-reads",
+                    str(self.reads),
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 2)
+        launch.assert_not_called()
 
     def test_rejects_missing_executables_before_launch(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            directory = Path(temporary_directory)
-            assembly = directory / "assembly.fasta"
-            diamond_db = directory / "petra.dmnd"
-            reads = directory / "reads.fastq"
-            for path in (assembly, diamond_db, reads):
-                path.touch()
+        def which_without_bedtools(executable: str) -> str | None:
+            return None if executable == "bedtools" else f"/usr/bin/{executable}"
 
-            def which_without_bedtools(executable: str) -> str | None:
-                return None if executable == "bedtools" else f"/usr/bin/{executable}"
-
-            with (
-                patch("petra.cli.shutil.which", side_effect=which_without_bedtools),
-                patch("petra.cli.launch_workflow") as launch,
-            ):
-                result = CliRunner().invoke(
-                    app,
-                    [
-                        "run",
-                        "--assembly",
-                        str(assembly),
-                        "--diamond-db",
-                        str(diamond_db),
-                        "--long-reads",
-                        str(reads),
-                    ],
-                )
-
-            self.assertEqual(result.exit_code, 1)
-            self.assertIn(
-                "Required executables not found on PATH: bedtools.",
-                result.output,
+        with (
+            patch("petra.cli.shutil.which", side_effect=which_without_bedtools),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--database",
+                    str(self.database),
+                    "--long-reads",
+                    str(self.reads),
+                ],
             )
-            launch.assert_not_called()
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn(
+            "Required executables not found on PATH: bedtools.",
+            result.output,
+        )
+        launch.assert_not_called()
 
 
 def _flatten(output: str) -> str:

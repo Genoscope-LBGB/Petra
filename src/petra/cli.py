@@ -13,6 +13,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from .database import (
+    DIAMOND_DATABASE_FILENAME,
     DatabaseBuildError,
     build_diamond_database,
     build_rna_databases,
@@ -64,6 +65,15 @@ def _validate_alpha(value: float) -> float:
     if value <= 0:
         raise typer.BadParameter(
             "The alpha-majority threshold must be greater than 0."
+        )
+    return value
+
+
+def _validate_database_directory(value: Path) -> Path:
+    if not (value / DIAMOND_DATABASE_FILENAME).is_file():
+        raise typer.BadParameter(
+            f"{DIAMOND_DATABASE_FILENAME} not found in {value}. Build it with "
+            f"'petra build-db --output {value}'."
         )
     return value
 
@@ -123,7 +133,7 @@ def main(
     context_settings=_RUN_CONTEXT,
     epilog=(
         "Targets and advanced Snakemake options follow '--'. Example: "
-        "petra run --assembly assembly.fasta --diamond-db database/petra.dmnd "
+        "petra run --assembly assembly.fasta --database database "
         "--output run-1 -- --targets pyrodigal"
     ),
 )
@@ -141,14 +151,16 @@ def run(
             rich_help_panel="Inputs",
         ),
     ],
-    diamond_db: Annotated[
+    database: Annotated[
         Path,
         typer.Option(
-            "--diamond-db",
-            help="Taxonomy-aware DIAMOND database used for protein alignment.",
+            "--database",
+            "-d",
+            help="Database directory produced by 'petra build-db'.",
             exists=True,
-            dir_okay=False,
+            file_okay=False,
             readable=True,
+            callback=_validate_database_directory,
             rich_help_panel="Inputs",
         ),
     ],
@@ -302,7 +314,7 @@ def run(
     """Run the complete workflow unless Snakemake targets are passed after '--'."""
     workflow_config = {
         "assembly": assembly,
-        "diamond_db": diamond_db,
+        "diamond_db": database / DIAMOND_DATABASE_FILENAME,
         "long_reads": long_reads,
         "sequencing_technology": technology,
         "no_bam_cleaning": no_bam_cleaning,

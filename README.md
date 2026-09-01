@@ -50,13 +50,15 @@ petra build-db --output database --build-rna-dbs --skip-diamond-db
 
 ### Running the workflow
 
-Supply every long-read file by repeating `--long-reads`. The sequencing technology
-defaults to `pacbio` (`map-hifi`), select `ont` to use `map-ont`:
+`--database` takes the directory built by `petra build-db`, not an individual
+database file. Supply every long-read file by repeating `--long-reads`. The
+sequencing technology defaults to `pacbio` (`map-hifi`), select `ont` to use
+`map-ont`:
 
 ```console
 petra run \
   --assembly assembly.fasta \
-  --diamond-db database/petra.dmnd \
+  --database database \
   --long-reads reads-1.fastq.gz \
   --long-reads reads-2.fastq.gz \
   --technology ont \

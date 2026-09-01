@@ -59,7 +59,7 @@ RRNA_CM_ACCESSIONS = (
     "RF02546",
 )
 
-_DATABASE_FILENAME = "petra.dmnd"
+DIAMOND_DATABASE_FILENAME = "petra.dmnd"
 _NR_FILENAME = "nr.gz"
 _TAXON_MAP_FILENAME = "prot.accession2taxid.FULL.gz"
 _CM_FILENAME = "petra.rrna.cm"
@@ -116,7 +116,7 @@ def build_diamond_database(
         _resolve_input(taxon_map, "taxon map") if taxon_map is not None else None
     )
     output_directory = _prepare_output_directory(output)
-    database_path = output_directory / _DATABASE_FILENAME
+    database_path = output_directory / DIAMOND_DATABASE_FILENAME
     database_base = database_path.with_suffix("")
 
     if _path_exists(database_path):
