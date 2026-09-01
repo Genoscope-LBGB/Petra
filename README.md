@@ -8,6 +8,23 @@ pip install .
 
 ## Usage
 
+### Building the local DIAMOND database
+
+Build a taxonomy-aware DIAMOND database from local inputs:
+
+```console
+petra build-db \
+  --fasta proteins.fasta \
+  --taxon-map prot.accession2taxid.FULL.gz \
+  --output database
+```
+
+The command requires `diamond` on `PATH` and creates `database/petra.dmnd`. If
+an input is omitted, it downloads NCBI NR or the full NCBI protein taxon map
+into the output directory, logs the source and destination, and removes the
+download after the build. It fails rather than replacing an existing download
+or `petra.dmnd`.
+
 ### Running the workflow
 
 Supply every long-read file by repeating `--long-reads`. The sequencing technology
@@ -65,19 +82,27 @@ petra-compare \
   --output comparison.png
 ```
 
-### Building the local DIAMOND database
+### Filtering the prediction table
 
-Build a taxonomy-aware DIAMOND database from local inputs:
+`petra-filter` keeps the sequences of `predictions.final.tsv` that satisfy an
+expression, given as one quoted argument. A condition is a column name of the
+table, an operator among `==`, `!=`, `<`, `<=`, `>`, `>=` (`=` is read as
+`==`), and a value:
 
 ```console
-petra build-db \
-  --fasta proteins.fasta \
-  --taxon-map prot.accession2taxid.FULL.gz \
-  --output database
+petra-filter \
+  -i run-1/predictions.final.tsv \
+  -o kept.tsv \
+  "median_coverage<40 and gc_percent>59 and not phylum==Actinopteri"
 ```
 
-The command requires `diamond` on `PATH` and creates `database/petra.dmnd`. If
-an input is omitted, it downloads NCBI NR or the full NCBI protein taxon map
-into the output directory, logs the source and destination, and removes the
-download after the build. It fails rather than replacing an existing download
-or `petra.dmnd`.
+Keywords are case-insensitive, and everything inside the quoted expression, 
+parentheses included, reaches the program untouched:
+
+```console
+petra-filter -i run-1/predictions.final.tsv \
+  "(domain==Bacteria or domain==N/A) and sequence_length>=10000"
+```
+
+The filtered table goes to standard output when `--output` is omitted, and the
+counts of retained sequences and bases are reported on standard error.
