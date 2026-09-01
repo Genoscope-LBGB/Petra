@@ -8,6 +8,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from petra.cli import SequencingTechnology, app
+from petra.database import DatabaseBuildError
 
 
 class RunCliTest(unittest.TestCase):
@@ -116,6 +117,120 @@ class RunCliTest(unittest.TestCase):
                 result.output,
             )
             launch.assert_not_called()
+
+
+def _flatten(output: str) -> str:
+    """Collapse the box drawing and line wrapping Rich applies to usage errors."""
+    return " ".join(output.replace("│", " ").split())
+
+
+class BuildDbCliTest(unittest.TestCase):
+    def test_builds_only_the_diamond_database_by_default(self) -> None:
+        with (
+            patch("petra.cli.build_diamond_database") as diamond,
+            patch("petra.cli.build_rna_databases") as rna,
+        ):
+            result = CliRunner().invoke(app, ["build-db", "--output", "database"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        diamond.assert_called_once()
+        rna.assert_not_called()
+
+    def test_builds_both_databases_in_the_same_directory(self) -> None:
+        with (
+            patch("petra.cli.build_diamond_database") as diamond,
+            patch("petra.cli.build_rna_databases") as rna,
+        ):
+            result = CliRunner().invoke(
+                app, ["build-db", "--output", "database", "--build-rna-dbs"]
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(
+            diamond.call_args.kwargs["output"], rna.call_args.kwargs["output"]
+        )
+
+    def test_skips_the_diamond_database_when_asked(self) -> None:
+        with (
+            patch("petra.cli.build_diamond_database") as diamond,
+            patch("petra.cli.build_rna_databases") as rna,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "build-db",
+                    "--output",
+                    "database",
+                    "--build-rna-dbs",
+                    "--skip-diamond-db",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        diamond.assert_not_called()
+        rna.assert_called_once_with(output=Path("database"))
+
+    def test_rejects_skipping_every_database(self) -> None:
+        with (
+            patch("petra.cli.build_diamond_database") as diamond,
+            patch("petra.cli.build_rna_databases") as rna,
+        ):
+            result = CliRunner().invoke(
+                app, ["build-db", "--output", "database", "--skip-diamond-db"]
+            )
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn(
+            "--skip-diamond-db leaves nothing to build. Add --build-rna-dbs.",
+            _flatten(result.output),
+        )
+        diamond.assert_not_called()
+        rna.assert_not_called()
+
+    def test_rejects_diamond_inputs_when_the_diamond_build_is_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fasta = Path(temporary_directory) / "proteins.faa"
+            fasta.touch()
+
+            with (
+                patch("petra.cli.build_diamond_database") as diamond,
+                patch("petra.cli.build_rna_databases") as rna,
+            ):
+                result = CliRunner().invoke(
+                    app,
+                    [
+                        "build-db",
+                        "--output",
+                        "database",
+                        "--build-rna-dbs",
+                        "--skip-diamond-db",
+                        "--fasta",
+                        str(fasta),
+                    ],
+                )
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn(
+            "--fasta and --taxon-map only feed the DIAMOND database",
+            _flatten(result.output),
+        )
+        diamond.assert_not_called()
+        rna.assert_not_called()
+
+    def test_reports_a_build_failure(self) -> None:
+        with (
+            patch("petra.cli.build_diamond_database"),
+            patch(
+                "petra.cli.build_rna_databases",
+                side_effect=DatabaseBuildError("cmpress failed with exit code 1."),
+            ),
+        ):
+            result = CliRunner().invoke(
+                app, ["build-db", "--output", "database", "--build-rna-dbs"]
+            )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("cmpress failed with exit code 1.", result.output)
 
 
 if __name__ == "__main__":

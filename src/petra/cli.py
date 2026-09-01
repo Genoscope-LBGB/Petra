@@ -12,7 +12,11 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
-from .database import DatabaseBuildError, build_diamond_database
+from .database import (
+    DatabaseBuildError,
+    build_diamond_database,
+    build_rna_databases,
+)
 from .launcher import LauncherError, launch_workflow, profile_summaries
 
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
@@ -333,7 +337,10 @@ def run(
 @app.command(
     "build-db",
     context_settings=_HELP_CONTEXT,
-    epilog="Usually takes around 11 hours and 20GB of RAM to complete",
+    epilog=(
+        "The DIAMOND database usually takes around 11 hours and 20GB of RAM to "
+        "complete. The rRNA databases take about an hour."
+    ),
 )
 def build_db(
     output: Annotated[
@@ -341,7 +348,7 @@ def build_db(
         typer.Option(
             "--output",
             "-o",
-            help="Directory in which to create petra.dmnd.",
+            help="Directory in which to create the databases.",
             file_okay=False,
             rich_help_panel="Output",
         ),
@@ -367,14 +374,52 @@ def build_db(
             rich_help_panel="Inputs",
         ),
     ] = None,
+    build_rna_dbs: Annotated[
+        bool,
+        typer.Option(
+            "--build-rna-dbs",
+            help=(
+                "Also build the rRNA covariance model and the SSU and LSU BLAST "
+                "databases next to petra.dmnd. Requires makeblastdb, cmpress and "
+                "taxonkit on PATH."
+            ),
+            rich_help_panel="Databases",
+        ),
+    ] = False,
+    skip_diamond_db: Annotated[
+        bool,
+        typer.Option(
+            "--skip-diamond-db",
+            help=(
+                "Leave petra.dmnd alone, to build the rRNA databases in a second "
+                "step without repeating the DIAMOND build."
+            ),
+            rich_help_panel="Databases",
+        ),
+    ] = False,
 ) -> None:
-    """Build a taxonomy-aware DIAMOND database."""
-    try:
-        build_diamond_database(
-            fasta=fasta,
-            taxon_map=taxon_map,
-            output=output,
+    """Build the taxonomy-aware DIAMOND database and, optionally, the rRNA ones."""
+    if skip_diamond_db and not build_rna_dbs:
+        raise typer.BadParameter(
+            "--skip-diamond-db leaves nothing to build. Add --build-rna-dbs.",
+            param_hint="--skip-diamond-db",
         )
+    if skip_diamond_db and (fasta is not None or taxon_map is not None):
+        raise typer.BadParameter(
+            "--fasta and --taxon-map only feed the DIAMOND database, which "
+            "--skip-diamond-db disables.",
+            param_hint="--skip-diamond-db",
+        )
+
+    try:
+        if not skip_diamond_db:
+            build_diamond_database(
+                fasta=fasta,
+                taxon_map=taxon_map,
+                output=output,
+            )
+        if build_rna_dbs:
+            build_rna_databases(output=output)
     except DatabaseBuildError as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1) from error

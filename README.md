@@ -8,7 +8,7 @@ pip install .
 
 ## Usage
 
-### Building the local DIAMOND database
+### Building the local databases
 
 Build a taxonomy-aware DIAMOND database from local inputs:
 
@@ -24,6 +24,29 @@ an input is omitted, it downloads NCBI NR or the full NCBI protein taxon map
 into the output directory, logs the source and destination, and removes the
 download after the build. It fails rather than replacing an existing download
 or `petra.dmnd`.
+
+Add `--build-rna-dbs` to also build the databases used for rRNA detection, next
+to `petra.dmnd` in the same output directory:
+
+- `petra.rrna.cm`, the `cmpress`ed concatenation of the 5S, 5.8S, SSU and LSU
+  Rfam families, for `cmscan`.
+- `petra.ssu.fasta`, a BLAST database of SILVA SSURef NR99 and PR2, carrying
+  NCBI taxon identifiers.
+- `petra.lsu.fasta`, a BLAST database of SILVA LSURef NR99 and EUKARYOME,
+  carrying the lineage in each sequence header.
+
+This part requires `makeblastdb`, `cmpress` and `taxonkit` on `PATH`, plus an
+NCBI taxonomy dump that `taxonkit` can read. Sequences shared between the two
+databases of a subunit are kept only once, and SILVA sequences of unidentified
+organisms are discarded. Sources are downloaded into the output directory and
+removed after the build.
+
+Because the DIAMOND build takes several hours, the two halves can be run
+separately. `--skip-diamond-db` leaves an existing `petra.dmnd` untouched:
+
+```console
+petra build-db --output database --build-rna-dbs --skip-diamond-db
+```
 
 ### Running the workflow
 
