@@ -36,10 +36,10 @@ to `petra.dmnd` in the same output directory:
   carrying the lineage in each sequence header.
 
 This part requires `makeblastdb`, `cmpress` and `taxonkit` on `PATH`, plus an
-NCBI taxonomy dump that `taxonkit` can read. Sequences shared between the two
-databases of a subunit are kept only once, and SILVA sequences of unidentified
-organisms are discarded. Sources are downloaded into the output directory and
-removed after the build.
+NCBI taxonomy dump that `taxonkit` can read. SILVA sequences of unidentified
+organisms are discarded, and PR2 sequences already present in SILVA are dropped
+so the SSU database holds each accession once. 
+Sources are downloaded into the output directory and removed after the build.
 
 Because the DIAMOND build takes several hours, the two halves can be run
 separately. `--skip-diamond-db` leaves an existing `petra.dmnd` untouched:

@@ -20,21 +20,23 @@ TAXON_MAP_URL = (
     "prot.accession2taxid.FULL.gz"
 )
 RFAM_CM_URL = "https://rfam.org/family/{accession}/cm"
+# Pinned rather than tracking the 'current' symlink: SILVA 144 dropped the LSU
+# exports entirely, and 138.2 is the last release providing both subunits.
+SILVA_RELEASE = "138.2"
+_SILVA_EXPORTS = f"https://ftp.arb-silva.de/release_{SILVA_RELEASE}/Exports"
 SILVA_SSU_URL = (
-    "https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/"
-    "SILVA_138.2_SSURef_NR99_tax_silva.fasta.gz"
+    f"{_SILVA_EXPORTS}/SILVA_{SILVA_RELEASE}_SSURef_NR99_tax_silva.fasta.gz"
 )
 SILVA_SSU_TAXON_MAP_URL = (
-    "https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/taxonomy/"
-    "ncbi/taxmap_embl-ebi_ena_ssu_ref_nr99_138.2.txt.gz"
+    f"{_SILVA_EXPORTS}/taxonomy/ncbi/"
+    f"taxmap_embl-ebi_ena_ssu_ref_nr99_{SILVA_RELEASE}.txt.gz"
 )
 SILVA_LSU_URL = (
-    "https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/"
-    "SILVA_138.2_LSURef_NR99_tax_silva.fasta.gz"
+    f"{_SILVA_EXPORTS}/SILVA_{SILVA_RELEASE}_LSURef_NR99_tax_silva.fasta.gz"
 )
 SILVA_LSU_TAXON_MAP_URL = (
-    "https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/taxonomy/"
-    "ncbi/taxmap_embl-ebi_ena_lsu_ref_nr99_138.2.txt.gz"
+    f"{_SILVA_EXPORTS}/taxonomy/ncbi/"
+    f"taxmap_embl-ebi_ena_lsu_ref_nr99_{SILVA_RELEASE}.txt.gz"
 )
 PR2_SSU_URL = (
     "https://github.com/pr2database/pr2database/releases/download/v5.1.1/"
@@ -70,6 +72,7 @@ _CM_INDEX_SUFFIXES = (".i1f", ".i1i", ".i1m", ".i1p")
 _FASTA_SUFFIXES = (".fasta", ".fa", ".fas", ".fna")
 _UNIDENTIFIED_TAXID = "32644"
 _PR2_COMPARTMENTS = (":apic", ":chro", ":mito", ":nucl", ":plas")
+_PR2_DOMAINS = frozenset({"Eukaryota", "Bacteria", "Archaea"})
 _RANK_PREFIX = re.compile(r"^[a-z]__")
 _DOWNLOAD_TIMEOUT_SECONDS = 60
 
@@ -539,25 +542,50 @@ def _write_pr2_records(
 ) -> dict[str, tuple[str, ...]]:
     """Write PR2 records absent from SILVA and return their lineages per record."""
     ranks_by_identifier: dict[str, tuple[str, ...]] = {}
+    without_domain = 0
     for header, sequence in _iter_fasta(source):
         for compartment in _PR2_COMPARTMENTS:
             header = header.replace(compartment, "")
-        identifier, _, lineage = header.partition("|")
-        identifier = identifier.strip()
+        fields = [field.strip() for field in header.split("|")]
+        identifier = fields[0]
         if not identifier or identifier in ranks_by_identifier:
             continue
         if _primary_accession(identifier) in excluded_accessions:
             continue
-        ranks_by_identifier[identifier] = tuple(
-            sys.intern(rank.strip().replace("_", " "))
-            for rank in lineage.split("|")
-            if rank.strip()
-        )
+        ranks = _pr2_lineage(fields[1:])
+        if not ranks:
+            without_domain += 1
+            continue
+        ranks_by_identifier[identifier] = ranks
         destination.write(f">{identifier}\n{sequence}\n")
     if not ranks_by_identifier:
-        raise DatabaseBuildError(f"No usable sequences found in {source}.")
+        raise DatabaseBuildError(
+            f"No sequence in {source} carries a recognizable domain; the PR2 "
+            "header layout changed."
+        )
+    if without_domain:
+        logger.warning(
+            "Skipped %d PR2 sequences without a recognizable domain", without_domain
+        )
     logger.info("Kept %d PR2 sequences absent from SILVA", len(ranks_by_identifier))
     return ranks_by_identifier
+
+
+def _pr2_lineage(fields: list[str]) -> tuple[str, ...]:
+    """Return the lineage of a PR2 header, from its domain field onwards.
+
+    A PR2 header interleaves non-taxonomic fields before the lineage, currently
+    gene, compartment and strain. Anchoring on the domain keeps the gene name
+    and the strain label out of the taxon names handed to taxonkit.
+    """
+    for position, field in enumerate(fields):
+        if field in _PR2_DOMAINS:
+            return tuple(
+                sys.intern(rank.replace("_", " "))
+                for rank in fields[position:]
+                if rank
+            )
+    return ()
 
 
 def _write_eukaryome_records(*, source: Path, destination) -> set[str]:

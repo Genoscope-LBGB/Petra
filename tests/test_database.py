@@ -33,9 +33,10 @@ SILVA_SSU_FASTA = (
     "UUUUUUUU\n"
 )
 PR2_FASTA = (
-    ">AY855839.1.1390_U|Eukaryota|Obazoa|Opisthokonta|Fungi\n"
+    ">AY855839.1.1390_U|18S_rRNA|nucleus||Eukaryota|Obazoa|Opisthokonta|Fungi\n"
     "ACGTACGT\n"
-    ">KX123456.1.1700:nucl|Eukaryota|Alveolata|Ciliophora|Tetrahymena_thermophila\n"
+    ">KX123456.1.1700_U|18S_rRNA|nucleus|strain_CBS_1|Eukaryota|Alveolata"
+    "|Ciliophora|Tetrahymena_thermophila\n"
     "TTTTGGGG\n"
 )
 SILVA_LSU_TAXON_MAP = (
@@ -210,7 +211,7 @@ class BuildRnaDatabasesTest(unittest.TestCase):
         records = _fasta_records(databases.ssu)
         self.assertEqual(
             sorted(records),
-            ["AY855839.1.1390", "JQ000001.1.1500", "KX123456.1.1700"],
+            ["AY855839.1.1390", "JQ000001.1.1500", "KX123456.1.1700_U"],
         )
         # SILVA sequences are stored as DNA and keep no lineage in the header.
         self.assertEqual(records["AY855839.1.1390"], "ATGCATGC")
@@ -241,7 +242,7 @@ class BuildRnaDatabasesTest(unittest.TestCase):
             {
                 "AY855839.1.1390": "562",
                 "JQ000001.1.1500": "5476",
-                "KX123456.1.1700": "312017",
+                "KX123456.1.1700_U": "312017",
             },
         )
 
@@ -299,6 +300,81 @@ class BuildRnaDatabasesTest(unittest.TestCase):
                 build_rna_databases(output=self.output)
 
         self.assertIn("'makeblastdb' executable was not found", str(raised.exception))
+
+
+class SilvaUrlTest(unittest.TestCase):
+    """SILVA's 'current' symlink moved to a release without LSU exports."""
+
+    def test_every_silva_url_pins_the_release(self) -> None:
+        urls = (
+            database.SILVA_SSU_URL,
+            database.SILVA_SSU_TAXON_MAP_URL,
+            database.SILVA_LSU_URL,
+            database.SILVA_LSU_TAXON_MAP_URL,
+        )
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertIn(f"release_{database.SILVA_RELEASE}/", url)
+                self.assertNotIn("/current/", url)
+
+    def test_every_silva_url_carries_the_release_in_its_filename(self) -> None:
+        for url in (database.SILVA_SSU_URL, database.SILVA_LSU_URL):
+            with self.subTest(url=url):
+                self.assertIn(f"SILVA_{database.SILVA_RELEASE}_", url)
+        for url in (
+            database.SILVA_SSU_TAXON_MAP_URL,
+            database.SILVA_LSU_TAXON_MAP_URL,
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(url.endswith(f"_{database.SILVA_RELEASE}.txt.gz"))
+
+
+class Pr2LineageTest(unittest.TestCase):
+    """A PR2 header carries gene, compartment and strain before the lineage."""
+
+    def test_starts_at_the_domain_and_drops_the_leading_metadata(self) -> None:
+        fields = [
+            "18S_rRNA",
+            "nucleus",
+            "strain_CBS_120353",
+            "Eukaryota",
+            "Obazoa",
+            "Knufia_epidermidis",
+        ]
+
+        self.assertEqual(
+            database._pr2_lineage(fields),
+            ("Eukaryota", "Obazoa", "Knufia epidermidis"),
+        )
+
+    def test_accepts_prokaryotic_domains(self) -> None:
+        for domain in ("Bacteria", "Archaea"):
+            with self.subTest(domain=domain):
+                self.assertEqual(
+                    database._pr2_lineage(["18S_rRNA", "nucleus", "", domain]),
+                    (domain,),
+                )
+
+    def test_returns_nothing_without_a_domain(self) -> None:
+        self.assertEqual(database._pr2_lineage(["18S_rRNA", "nucleus", ""]), ())
+
+    def test_rejects_a_pr2_file_whose_layout_lost_the_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "pr2.fasta"
+            source.write_text(
+                ">AB000001.1.1740_U|18S_rRNA|nucleus||Domainia|Fungi\nACGT\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(DatabaseBuildError) as raised:
+                with io.StringIO() as destination:
+                    database._write_pr2_records(
+                        source=source,
+                        destination=destination,
+                        excluded_accessions=set(),
+                    )
+
+        self.assertIn("PR2 header layout changed", str(raised.exception))
 
 
 class SilvaTaxonMapTest(unittest.TestCase):
