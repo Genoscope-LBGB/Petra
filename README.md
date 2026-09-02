@@ -52,10 +52,10 @@ petra build-db --output database --build-rna-dbs --skip-diamond-db
 
 ### Running the workflow
 
-`--database` takes the directory built by `petra build-db`, not an individual
-database file. Supply every long-read file by repeating `--long-reads`. The
-sequencing technology defaults to `pacbio` (`map-hifi`), select `ont` to use
-`map-ont`:
+For the full workflow, `--database` takes the directory built by
+`petra build-db`, not an individual database file. Supply every long-read file
+by repeating `--long-reads`. The sequencing technology defaults to `pacbio`
+(`map-hifi`); select `ont` to use `map-ont`:
 
 ```console
 petra run \
@@ -87,6 +87,21 @@ the minimum reported BLAST alignment length from its default of 200.
 Add `--trna` to annotate tRNAs. It requires `tRNAscan-SE` on `PATH` and writes
 `rna/predictions.trna.tsv` without pseudogenes, undetermined tRNAs or suppressor
 tRNAs, plus `rna/predictions.trna.stats`.
+
+Use `--skip-taxonomic-assignment` with `--rrna`, `--trna`, or both to run only
+the selected RNA analyses. Long reads are not required in this mode. The
+database is still required for rRNA classification, but a tRNA-only run does
+not require one:
+
+```console
+petra run \
+  --assembly assembly.fasta \
+  --database database \
+  --rrna \
+  --trna \
+  --skip-taxonomic-assignment \
+  --output run-1
+```
 
 The run writes `predictions.summary.png`, a summary graph to eyeball the result:
 GC against depth of coverage with point area scaled by sequence length, both
