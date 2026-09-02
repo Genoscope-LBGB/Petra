@@ -20,6 +20,7 @@ TAXON_MAP_URL = (
     "prot.accession2taxid.FULL.gz"
 )
 RFAM_CM_URL = "https://rfam.org/family/{accession}/cm"
+RFAM_CLANIN_URL = "https://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.clanin"
 # Pinned rather than tracking the 'current' symlink: SILVA 144 dropped the LSU
 # exports entirely, and 138.2 is the last release providing both subunits.
 SILVA_RELEASE = "138.2"
@@ -62,11 +63,12 @@ RRNA_CM_ACCESSIONS = (
 )
 
 DIAMOND_DATABASE_FILENAME = "petra.dmnd"
+COVARIANCE_MODEL_FILENAME = "petra.rrna.cm"
+CLAN_INFO_FILENAME = "petra.rrna.clanin"
+SSU_DATABASE_FILENAME = "petra.ssu.fasta"
+LSU_DATABASE_FILENAME = "petra.lsu.fasta"
 _NR_FILENAME = "nr.gz"
 _TAXON_MAP_FILENAME = "prot.accession2taxid.FULL.gz"
-_CM_FILENAME = "petra.rrna.cm"
-_SSU_FILENAME = "petra.ssu.fasta"
-_LSU_FILENAME = "petra.lsu.fasta"
 _RNA_SOURCE_DIRNAME = "rna_sources"
 _CM_INDEX_SUFFIXES = (".i1f", ".i1i", ".i1m", ".i1p")
 _FASTA_SUFFIXES = (".fasta", ".fa", ".fas", ".fna")
@@ -88,12 +90,13 @@ class RnaDatabases:
     """Databases required to detect and classify rRNA genes."""
 
     covariance_model: Path
+    clan_info: Path
     ssu: Path
     lsu: Path
 
     @property
-    def paths(self) -> tuple[Path, Path, Path]:
-        return (self.covariance_model, self.ssu, self.lsu)
+    def paths(self) -> tuple[Path, Path, Path, Path]:
+        return (self.covariance_model, self.clan_info, self.ssu, self.lsu)
 
 
 @dataclass(frozen=True)
@@ -306,16 +309,17 @@ def build_rna_databases(
     cmpress_executable: str = "cmpress",
     taxonkit_executable: str = "taxonkit",
 ) -> RnaDatabases:
-    """Build the covariance model and the SSU and LSU BLAST databases."""
+    """Build the covariance model, clan information, and SSU/LSU databases."""
     makeblastdb = _require_executable(makeblastdb_executable, "BLAST+")
     cmpress = _require_executable(cmpress_executable, "Infernal")
     taxonkit = _require_executable(taxonkit_executable, "TaxonKit")
 
     directory = _prepare_output_directory(output)
     databases = RnaDatabases(
-        covariance_model=directory / _CM_FILENAME,
-        ssu=directory / _SSU_FILENAME,
-        lsu=directory / _LSU_FILENAME,
+        covariance_model=directory / COVARIANCE_MODEL_FILENAME,
+        clan_info=directory / CLAN_INFO_FILENAME,
+        ssu=directory / SSU_DATABASE_FILENAME,
+        lsu=directory / LSU_DATABASE_FILENAME,
     )
     for path in databases.paths:
         if _path_exists(path):
@@ -351,6 +355,7 @@ def build_rna_databases(
             sources=sources,
             database=databases.lsu,
             makeblastdb=makeblastdb,
+            taxonkit=taxonkit,
         )
     except BaseException:
         for path in databases.paths:
@@ -392,6 +397,51 @@ def _build_covariance_model(*, sources: Path, database: Path, cmpress: str) -> N
     except OSError as error:
         raise DatabaseBuildError(f"Could not write {database}: {error}") from error
     _run(cmpress, [database.name], cwd=database.parent, label="cmpress")
+    clan_source = sources / "Rfam.clanin"
+    _download(RFAM_CLANIN_URL, clan_source, "Rfam clan information")
+    # cmscan uses --clanin to mark overlapping SSU/LSU models as competitors;
+    # filtering prevents references to models absent from our combined CM.
+    _write_clan_info(
+        source=clan_source,
+        destination=database.with_name(CLAN_INFO_FILENAME),
+    )
+
+
+def _write_clan_info(*, source: Path, destination: Path) -> None:
+    clans: list[tuple[str, list[str]]] = []
+    selected = frozenset(RRNA_CM_ACCESSIONS)
+    try:
+        with source.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                fields = line.split()
+                if len(fields) < 3:
+                    continue
+                members = list(
+                    dict.fromkeys(
+                        accession for accession in fields[1:] if accession in selected
+                    )
+                )
+                if len(members) >= 2:
+                    clans.append((fields[0], members))
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not read {source}: {error}") from error
+
+    if not clans:
+        raise DatabaseBuildError(
+            f"No relevant clans found in {source}; the Rfam clan file layout changed."
+        )
+
+    try:
+        with destination.open("x", encoding="utf-8", newline="\n") as stream:
+            for clan, members in clans:
+                stream.write("\t".join((clan, *members)) + "\n")
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not write {destination}: {error}") from error
+    logger.info(
+        "Kept %d Rfam clans containing %d members",
+        len(clans),
+        sum(len(members) for _, members in clans),
+    )
 
 
 def _build_ssu_database(
@@ -416,7 +466,7 @@ def _build_ssu_database(
             database.open("x", encoding="utf-8", newline="\n") as combined,
             taxid_map.open("x", encoding="utf-8", newline="\n") as taxids,
         ):
-            for identifier, _, sequence in _iter_silva_records(
+            for identifier, sequence in _iter_silva_records(
                 silva_fasta, silva.unidentified
             ):
                 combined.write(f">{identifier}\n{sequence}\n")
@@ -449,7 +499,13 @@ def _build_ssu_database(
     )
 
 
-def _build_lsu_database(*, sources: Path, database: Path, makeblastdb: str) -> None:
+def _build_lsu_database(
+    *,
+    sources: Path,
+    database: Path,
+    makeblastdb: str,
+    taxonkit: str,
+) -> None:
     silva_fasta = sources / "silva_lsu.fasta"
     silva_taxon_map = sources / "silva_lsu.taxmap"
     eukaryome_fasta = sources / "eukaryome_lsu.fasta"
@@ -458,25 +514,43 @@ def _build_lsu_database(*, sources: Path, database: Path, makeblastdb: str) -> N
     _download_archive(EUKARYOME_LSU_URL, eukaryome_fasta, "EUKARYOME LSU FASTA")
 
     silva = _read_silva_taxon_map(silva_taxon_map)
+    taxid_map = sources / "lsu.taxid_map"
     logger.info("Writing %s", database)
     try:
-        with database.open("x", encoding="utf-8", newline="\n") as combined:
-            eukaryome_accessions = _write_eukaryome_records(
+        with (
+            database.open("x", encoding="utf-8", newline="\n") as combined,
+            taxid_map.open("x", encoding="utf-8", newline="\n") as taxids,
+        ):
+            ranks, eukaryome_accessions = _write_eukaryome_records(
                 source=eukaryome_fasta,
                 destination=combined,
             )
-            for identifier, lineage, sequence in _iter_silva_records(
+            for identifier, sequence in _iter_silva_records(
                 silva_fasta, silva.unidentified
             ):
                 if _primary_accession(identifier) in eukaryome_accessions:
                     continue
-                combined.write(f">{_join_lineage(identifier, lineage)}\n{sequence}\n")
+                combined.write(f">{identifier}\n{sequence}\n")
+                taxid = silva.taxids.get(identifier)
+                if taxid is not None:
+                    taxids.write(f"{identifier}\t{taxid}\n")
+            resolved = _resolve_taxids(ranks, taxonkit=taxonkit)
+            for identifier, taxid in resolved.items():
+                taxids.write(f"{identifier}\t{taxid}\n")
     except OSError as error:
         raise DatabaseBuildError(f"Could not write {database}: {error}") from error
 
     _run(
         makeblastdb,
-        ["-in", database.name, "-dbtype", "nucl"],
+        [
+            "-in",
+            database.name,
+            "-dbtype",
+            "nucl",
+            "-parse_seqids",
+            "-taxid_map",
+            str(taxid_map),
+        ],
         cwd=database.parent,
         label="makeblastdb",
     )
@@ -522,14 +596,14 @@ def _read_silva_taxon_map(path: Path) -> SilvaTaxonMap:
 
 
 def _iter_silva_records(path: Path, unidentified: set[str]):
-    """Yield identified SILVA records as ``(identifier, lineage, DNA sequence)``."""
+    """Yield identified SILVA records as ``(identifier, DNA sequence)``."""
     kept = 0
     for header, sequence in _iter_fasta(path):
-        identifier, _, lineage = header.partition(" ")
+        identifier = header.partition(" ")[0]
         if not identifier or identifier in unidentified:
             continue
         kept += 1
-        yield identifier, lineage, sequence.replace("U", "T")
+        yield identifier, sequence.replace("U", "T")
     if not kept:
         raise DatabaseBuildError(f"No identified sequences found in {path}.")
 
@@ -588,23 +662,30 @@ def _pr2_lineage(fields: list[str]) -> tuple[str, ...]:
     return ()
 
 
-def _write_eukaryome_records(*, source: Path, destination) -> set[str]:
-    """Write EUKARYOME records with pipe-separated lineages, return its accessions."""
+def _write_eukaryome_records(
+    *,
+    source: Path,
+    destination,
+) -> tuple[dict[str, tuple[str, ...]], set[str]]:
+    """Write EUKARYOME records and return their verbatim ranks and accessions."""
+    ranks_by_identifier: dict[str, tuple[str, ...]] = {}
     accessions: set[str] = set()
     for header, sequence in _iter_fasta(source):
         fields = [field.strip() for field in header.split(";")]
         identifier = fields[0]
-        if not identifier:
+        if not identifier or identifier in ranks_by_identifier:
             continue
-        accessions.add(_primary_accession(identifier))
-        lineage = "|".join(
-            rank for rank in (_RANK_PREFIX.sub("", field) for field in fields[1:]) if rank
+        ranks_by_identifier[identifier] = tuple(
+            rank
+            for rank in (_RANK_PREFIX.sub("", field) for field in fields[1:])
+            if rank
         )
-        destination.write(f">{_join_lineage(identifier, lineage)}\n{sequence}\n")
-    if not accessions:
+        accessions.add(_primary_accession(identifier))
+        destination.write(f">{identifier}\n{sequence}\n")
+    if not ranks_by_identifier:
         raise DatabaseBuildError(f"No usable sequences found in {source}.")
     logger.info("Kept %d EUKARYOME accessions", len(accessions))
-    return accessions
+    return ranks_by_identifier, accessions
 
 
 def _resolve_taxids(
@@ -612,22 +693,52 @@ def _resolve_taxids(
     *,
     taxonkit: str,
 ) -> dict[str, int]:
-    """Map each record to the taxon of the deepest lineage rank known to NCBI."""
+    """Map each record to the deepest unambiguous NCBI taxon in its lineage."""
     names = sorted({rank for ranks in ranks_by_identifier.values() for rank in ranks})
     if not names:
         return {}
-    resolved = _name_to_taxid(names, taxonkit=taxonkit)
+    candidates_by_name = _name_to_taxid(names, taxonkit=taxonkit)
+    ambiguous_taxids = {
+        taxid
+        for candidates in candidates_by_name.values()
+        if len(candidates) > 1
+        for taxid in candidates
+    }
+    lineages = _taxid_lineage_names(ambiguous_taxids, taxonkit=taxonkit)
+
     taxids: dict[str, int] = {}
     for identifier, ranks in ranks_by_identifier.items():
+        accepted_names: list[str] = []
         for rank in ranks:
-            taxid = resolved.get(rank)
-            if taxid is not None:
-                taxids[identifier] = taxid
-    logger.info("Resolved a taxon for %d of %d records", len(taxids), len(ranks_by_identifier))
+            candidates = candidates_by_name.get(rank, [])
+            if not candidates:
+                continue
+            if len(candidates) == 1:
+                taxid = candidates[0]
+            else:
+                matching = [
+                    candidate
+                    for candidate in candidates
+                    if all(
+                        ancestor in lineages.get(candidate, set())
+                        for ancestor in accepted_names
+                    )
+                ]
+                if len(matching) != 1:
+                    break
+                taxid = matching[0]
+            taxids[identifier] = taxid
+            accepted_names.append(rank)
+    logger.info(
+        "Saw %d ambiguous taxon names; resolved a taxon for %d of %d records",
+        sum(len(candidates) > 1 for candidates in candidates_by_name.values()),
+        len(taxids),
+        len(ranks_by_identifier),
+    )
     return taxids
 
 
-def _name_to_taxid(names: list[str], *, taxonkit: str) -> dict[str, int]:
+def _name_to_taxid(names: list[str], *, taxonkit: str) -> dict[str, list[int]]:
     logger.info("Resolving %d taxon names with taxonkit", len(names))
     try:
         process = subprocess.run(
@@ -646,7 +757,7 @@ def _name_to_taxid(names: list[str], *, taxonkit: str) -> dict[str, int]:
             f"taxonkit name2taxid failed with exit code {process.returncode}.{suffix}"
         )
 
-    resolved: dict[str, int] = {}
+    resolved: dict[str, list[int]] = {}
     for line in process.stdout.splitlines():
         fields = line.split("\t")
         if len(fields) < 2 or not fields[1]:
@@ -655,8 +766,55 @@ def _name_to_taxid(names: list[str], *, taxonkit: str) -> dict[str, int]:
             taxid = int(fields[1])
         except ValueError:
             continue
-        resolved.setdefault(fields[0], taxid)
+        candidates = resolved.setdefault(fields[0], [])
+        if taxid not in candidates:
+            candidates.append(taxid)
     return resolved
+
+
+def _taxid_lineage_names(taxids: set[int], *, taxonkit: str) -> dict[int, set[str]]:
+    if not taxids:
+        return {}
+    ordered_taxids = sorted(taxids)
+    logger.info("Reading lineages for %d ambiguous taxon candidates", len(taxids))
+    try:
+        process = subprocess.run(
+            [taxonkit, "lineage"],
+            input="\n".join(str(taxid) for taxid in ordered_taxids) + "\n",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not run taxonkit: {error}") from error
+    if process.returncode != 0:
+        detail = process.stderr.strip()
+        suffix = f" {detail}" if detail else ""
+        raise DatabaseBuildError(
+            f"taxonkit lineage failed with exit code {process.returncode}.{suffix}"
+        )
+
+    lineages: dict[int, set[str]] = {}
+    for line in process.stdout.splitlines():
+        fields = line.split("\t")
+        try:
+            taxid = int(fields[0])
+        except (IndexError, ValueError) as error:
+            raise DatabaseBuildError(
+                "Could not read taxonkit lineage output; its layout changed."
+            ) from error
+        if len(fields) < 2:
+            raise DatabaseBuildError(
+                "Could not read taxonkit lineage output; its layout changed."
+            )
+        lineages[taxid] = {
+            name.strip() for name in fields[1].split(";") if name.strip()
+        }
+    if not lineages:
+        raise DatabaseBuildError(
+            "Could not read taxonkit lineage output; its layout changed."
+        )
+    return lineages
 
 
 def _iter_fasta(path: Path):
@@ -681,15 +839,6 @@ def _iter_fasta(path: Path):
 
 def _primary_accession(identifier: str) -> str:
     return identifier.split(".", 1)[0]
-
-
-def _join_lineage(identifier: str, lineage: str) -> str:
-    ranks = "|".join(
-        rank.replace(" ", "_")
-        for rank in (part.strip() for part in lineage.replace(";", "|").split("|"))
-        if rank
-    )
-    return f"{identifier}|{ranks}" if ranks else identifier
 
 
 def _download_archive(url: str, destination: Path, label: str) -> None:

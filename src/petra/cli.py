@@ -13,15 +13,21 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 from .database import (
+    CLAN_INFO_FILENAME,
+    COVARIANCE_MODEL_FILENAME,
     DIAMOND_DATABASE_FILENAME,
+    LSU_DATABASE_FILENAME,
+    SSU_DATABASE_FILENAME,
     DatabaseBuildError,
     build_diamond_database,
     build_rna_databases,
 )
 from .launcher import LauncherError, launch_workflow, profile_summaries
+from .taxonomy import HostTaxonError, resolve_host_taxon
 
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
 _RUN_CONTEXT = {**_HELP_CONTEXT, "allow_extra_args": True}
+_RRNA_CHUNKS = 16
 
 
 class SequencingTechnology(str, Enum):
@@ -39,21 +45,24 @@ class SummaryPanel(str, Enum):
     ASSIGNMENT_STATUS = "assignment-status"
 
 
-def _require_executables() -> None:
+def _require_executables(*, rrna: bool, trna: bool) -> None:
+    required = [
+        "diamond",
+        "pyrodigal",
+        "taxonkit",
+        "cd-hit",
+        "minimap2",
+        "samtools",
+        "segmasker",
+        "whokaryote.py",
+        "bedtools",
+    ]
+    if rrna:
+        required.extend(("cmscan", "blastn"))
+    if trna:
+        required.append("tRNAscan-SE")
     missing = [
-        executable
-        for executable in (
-            "diamond",
-            "pyrodigal",
-            "taxonkit",
-            "cd-hit",
-            "minimap2",
-            "samtools",
-            "segmasker",
-            "whokaryote.py",
-            "bedtools",
-        )
-        if shutil.which(executable) is None
+        executable for executable in required if shutil.which(executable) is None
     ]
     if missing:
         raise LauncherError(
@@ -249,6 +258,46 @@ def run(
             show_default=True,
         ),
     ] = 0.5,
+    rrna: Annotated[
+        bool,
+        typer.Option(
+            "--rrna",
+            help=(
+                "Detect rRNA genes with cmscan and classify SSU and LSU genes "
+                "with blastn."
+            ),
+            rich_help_panel="rRNA detection",
+        ),
+    ] = False,
+    rrna_min_alignment_length: Annotated[
+        int,
+        typer.Option(
+            "--rrna-min-alignment-length",
+            min=1,
+            help="Minimum BLAST alignment length for a hit to be reported.",
+            rich_help_panel="rRNA detection",
+            show_default=True,
+        ),
+    ] = 200,
+    host_taxon: Annotated[
+        str | None,
+        typer.Option(
+            "--host-taxon",
+            help=(
+                "Expected host taxon, as an NCBI scientific name or TaxID. rRNA "
+                "hits whose lineage does not contain it are flagged non_host."
+            ),
+            rich_help_panel="rRNA detection",
+        ),
+    ] = None,
+    trna: Annotated[
+        bool,
+        typer.Option(
+            "--trna",
+            help="Annotate tRNA genes with tRNAscan-SE.",
+            rich_help_panel="tRNA detection",
+        ),
+    ] = False,
     summary_font_size: Annotated[
         float,
         typer.Option(
@@ -312,24 +361,65 @@ def run(
     ] = "slurm",
 ) -> None:
     """Run the complete workflow unless Snakemake targets are passed after '--'."""
-    workflow_config = {
-        "assembly": assembly,
-        "diamond_db": database / DIAMOND_DATABASE_FILENAME,
-        "long_reads": long_reads,
-        "sequencing_technology": technology,
-        "no_bam_cleaning": no_bam_cleaning,
-        "max_low_complexity": max_low_complexity,
-        "max_clusters_per_sequence": max_clusters_per_sequence,
-        "max_target_occurrences": max_target_occurrences,
-        "alpha": alpha,
-        "summary_font_size": summary_font_size,
-        "summary_colors": summary_colors,
-        "summary_disabled_panels": [
-            panel.value for panel in summary_disable_panel or ()
-        ],
-    }
+    if host_taxon is not None and not rrna:
+        raise typer.BadParameter(
+            "--host-taxon requires --rrna.",
+            param_hint="--host-taxon",
+        )
+
+    if rrna:
+        rna_database_filenames = (
+            COVARIANCE_MODEL_FILENAME,
+            CLAN_INFO_FILENAME,
+            SSU_DATABASE_FILENAME,
+            LSU_DATABASE_FILENAME,
+        )
+        missing = [
+            filename
+            for filename in rna_database_filenames
+            if not (database / filename).is_file()
+        ]
+        if missing:
+            raise typer.BadParameter(
+                f"RNA database files not found in {database}: {', '.join(missing)}. "
+                "Build them with "
+                f"'petra build-db --output {database} --build-rna-dbs "
+                "--skip-diamond-db'.",
+                param_hint="--database",
+            )
+
     try:
-        _require_executables()
+        # taxonkit resolves the host taxon, so PATH is checked first to report a
+        # missing tool as such instead of as a resolution failure.
+        _require_executables(rrna=rrna, trna=trna)
+        canonical_host_taxon = (
+            resolve_host_taxon(host_taxon) if host_taxon is not None else None
+        )
+        workflow_config = {
+            "assembly": assembly,
+            "diamond_db": database / DIAMOND_DATABASE_FILENAME,
+            "long_reads": long_reads,
+            "sequencing_technology": technology,
+            "no_bam_cleaning": no_bam_cleaning,
+            "max_low_complexity": max_low_complexity,
+            "max_clusters_per_sequence": max_clusters_per_sequence,
+            "max_target_occurrences": max_target_occurrences,
+            "alpha": alpha,
+            "summary_font_size": summary_font_size,
+            "summary_colors": summary_colors,
+            "summary_disabled_panels": [
+                panel.value for panel in summary_disable_panel or ()
+            ],
+            "rrna": rrna,
+            "trna": trna,
+            "rrna_chunks": _RRNA_CHUNKS,
+            "rrna_min_alignment_length": rrna_min_alignment_length,
+            "host_taxon": canonical_host_taxon,
+            "covariance_model": database / COVARIANCE_MODEL_FILENAME,
+            "clan_info": database / CLAN_INFO_FILENAME,
+            "ssu_database": database / SSU_DATABASE_FILENAME,
+            "lsu_database": database / LSU_DATABASE_FILENAME,
+        }
         exit_code = launch_workflow(
             distribution_name="petra",
             output=output,
@@ -339,7 +429,7 @@ def run(
             passthrough=context.args,
             console=console,
         )
-    except LauncherError as error:
+    except (HostTaxonError, LauncherError) as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1) from error
 

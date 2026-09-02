@@ -1,11 +1,27 @@
 include: "rules/gene_prediction.smk"
 include: "rules/diamond.smk"
+include: "rules/rrna.smk"
+include: "rules/trna.smk"
 include: "rules/whokaryote.smk"
 include: "rules/coverage.smk"
 include: "rules/qc.smk"
 
 
+_ALL_TARGETS = [
+    "predictions.final.tsv",
+    "predictions.summary.png",
+    "predictions.eukaryota.fasta",
+    "predictions.bacteria.fasta",
+    "predictions.viruses.fasta",
+    "predictions.archaea.fasta",
+    "predictions.unassigned.fasta",
+]
+if config["rrna"]:
+    _ALL_TARGETS.extend(["predictions.rrna.gff", "predictions.rrna.tsv"])
+if config["trna"]:
+    _ALL_TARGETS.extend(["predictions.trna.tsv", "predictions.trna.stats"])
+
+
 rule all:
     input:
-        "predictions.final.tsv",
-        "predictions.summary.png",
+        _ALL_TARGETS,

@@ -58,6 +58,11 @@ EUKARYOME_FASTA = (
     "TTAACCGG\n"
 )
 CM_PAYLOAD = "INFERNAL1/a\nNAME  model\n//\n"
+RFAM_CLANIN = (
+    "CL00111 RF00177 RF01960 RF99999\n"
+    "CL00999 RF00001 RF99998\n"
+    "CL00112 RF02540 RF02541 RF02542\n"
+)
 
 _STUB_TEMPLATE = """\
 import pathlib
@@ -123,6 +128,7 @@ def _payloads() -> dict[str, bytes]:
         database.EUKARYOME_LSU_URL: _zip_bytes(
             "General_EUK_LSU_v2.0.fasta", EUKARYOME_FASTA
         ),
+        database.RFAM_CLANIN_URL: RFAM_CLANIN.encode("utf-8"),
     }
     for accession in database.RRNA_CM_ACCESSIONS:
         url = database.RFAM_CM_URL.format(accession=accession)
@@ -190,8 +196,18 @@ class BuildRnaDatabasesTest(unittest.TestCase):
         databases = self._build()
 
         self.assertTrue(databases.covariance_model.is_file())
+        self.assertTrue(databases.clan_info.is_file())
         self.assertTrue(databases.ssu.is_file())
         self.assertTrue(databases.lsu.is_file())
+        self.assertEqual(
+            databases.paths,
+            (
+                databases.covariance_model,
+                databases.clan_info,
+                databases.ssu,
+                databases.lsu,
+            ),
+        )
         self.assertFalse((self.output / "rna_sources").exists())
 
     def test_concatenates_every_rfam_model_before_cmpress(self) -> None:
@@ -220,7 +236,10 @@ class BuildRnaDatabasesTest(unittest.TestCase):
         recorded: dict[str, str] = {}
 
         def capture(executable: str, arguments: list[str], **kwargs: object) -> None:
-            if Path(executable).stem == "makeblastdb" and "-taxid_map" in arguments:
+            if (
+                Path(executable).stem == "makeblastdb"
+                and arguments[1] == database.SSU_DATABASE_FILENAME
+            ):
                 index = arguments.index("-taxid_map")
                 recorded["path"] = arguments[index + 1]
             return original(executable, arguments, **kwargs)
@@ -246,39 +265,65 @@ class BuildRnaDatabasesTest(unittest.TestCase):
             },
         )
 
-    def test_lsu_keeps_lineage_and_drops_silva_records_present_in_eukaryome(
-        self,
-    ) -> None:
+    def test_lsu_uses_plain_headers_and_eukaryome_precedes_silva(self) -> None:
         databases = self._build()
 
-        headers = sorted(_fasta_records(databases.lsu))
-        self.assertEqual(
-            headers,
-            [
-                "LN000001.1.2800|Eukaryota|Metazoa|Homo_sapiens",
-                "MH863990|Fungi|Basidiomycota|Agaricus_bisporus",
-            ],
-        )
+        records = _fasta_records(databases.lsu)
+        self.assertEqual(sorted(records), ["LN000001.1.2800", "MH863990"])
+        self.assertEqual(records["MH863990"], "TTAACCGG")
+        self.assertEqual(records["LN000001.1.2800"], "CCGGAATT")
 
-    def test_lsu_blast_database_is_built_without_a_taxid_map(self) -> None:
-        self._build()
+    def test_lsu_taxid_map_combines_silva_and_resolved_eukaryome_taxids(self) -> None:
+        recorded: dict[str, object] = {}
 
-        calls = [
-            call
-            for call in _stub_arguments(self.tools, "makeblastdb")
-            if "petra.lsu.fasta" in call
+        def capture(executable: str, arguments: list[str], **kwargs: object) -> None:
+            if (
+                Path(executable).stem == "makeblastdb"
+                and arguments[1] == database.LSU_DATABASE_FILENAME
+            ):
+                recorded["arguments"] = arguments
+                recorded["path"] = arguments[arguments.index("-taxid_map") + 1]
+            return original(executable, arguments, **kwargs)
+
+        original = database._run
+        with patch.object(database, "_run", capture):
+            with patch.object(database, "_download", _fake_download(_payloads())):
+                with patch.object(
+                    database, "_remove_source_directory", lambda path, strict: None
+                ):
+                    build_rna_databases(output=self.output)
+
+        rows = [
+            line.split("\t")
+            for line in Path(recorded["path"]).read_text(encoding="utf-8").splitlines()
         ]
-        self.assertEqual(len(calls), 1)
-        self.assertNotIn("-taxid_map", calls[0])
+        self.assertEqual(
+            dict(rows),
+            {
+                "LN000001.1.2800": "9606",
+                "MH863990": "4751",
+            },
+        )
+        arguments = recorded["arguments"]
+        self.assertIn("-parse_seqids", arguments)
+        self.assertIn("-taxid_map", arguments)
 
     def test_refuses_to_overwrite_an_existing_database(self) -> None:
-        self.output.mkdir(parents=True)
-        (self.output / "petra.ssu.fasta").touch()
+        for filename in (
+            database.COVARIANCE_MODEL_FILENAME,
+            database.CLAN_INFO_FILENAME,
+            database.SSU_DATABASE_FILENAME,
+            database.LSU_DATABASE_FILENAME,
+        ):
+            with self.subTest(filename=filename):
+                self.output.mkdir(parents=True, exist_ok=True)
+                (self.output / filename).touch()
 
-        with self.assertRaises(DatabaseBuildError) as raised:
-            self._build()
+                with self.assertRaises(DatabaseBuildError) as raised:
+                    self._build()
 
-        self.assertIn("RNA database already exists", str(raised.exception))
+                self.assertIn("RNA database already exists", str(raised.exception))
+                (self.output / filename).unlink()
 
     def test_removes_partial_databases_when_a_tool_fails(self) -> None:
         def failing_run(
@@ -300,6 +345,40 @@ class BuildRnaDatabasesTest(unittest.TestCase):
                 build_rna_databases(output=self.output)
 
         self.assertIn("'makeblastdb' executable was not found", str(raised.exception))
+
+
+class RfamClanInfoTest(unittest.TestCase):
+    def test_keeps_only_selected_multi_member_clans(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = directory / "Rfam.clanin"
+            destination = directory / database.CLAN_INFO_FILENAME
+            source.write_text(RFAM_CLANIN, encoding="utf-8")
+
+            database._write_clan_info(source=source, destination=destination)
+
+            self.assertEqual(
+                destination.read_text(encoding="utf-8"),
+                "CL00111\tRF00177\tRF01960\n"
+                "CL00112\tRF02540\tRF02541\tRF02542\n",
+            )
+
+    def test_rejects_a_clan_file_without_relevant_competitors(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = directory / "Rfam.clanin"
+            source.write_text(
+                "CL00111 RF00177 RF99999\nCL99999 RF99998 RF99999\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(DatabaseBuildError) as raised:
+                database._write_clan_info(
+                    source=source,
+                    destination=directory / database.CLAN_INFO_FILENAME,
+                )
+
+        self.assertIn("Rfam clan file layout changed", str(raised.exception))
 
 
 class SilvaUrlTest(unittest.TestCase):
@@ -402,6 +481,26 @@ class SilvaTaxonMapTest(unittest.TestCase):
         self.assertIn("layout changed", str(raised.exception))
 
 
+class EukaryomeRecordsTest(unittest.TestCase):
+    def test_keeps_rank_names_verbatim_and_writes_plain_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "eukaryome.fasta"
+            source.write_text(EUKARYOME_FASTA, encoding="utf-8")
+            destination = io.StringIO()
+
+            ranks, accessions = database._write_eukaryome_records(
+                source=source,
+                destination=destination,
+            )
+
+        self.assertEqual(
+            ranks,
+            {"MH863990": ("Fungi", "Basidiomycota", "Agaricus_bisporus")},
+        )
+        self.assertEqual(accessions, {"MH863990"})
+        self.assertEqual(destination.getvalue(), ">MH863990\nTTAACCGG\n")
+
+
 class ResolveTaxidsTest(unittest.TestCase):
     def test_prefers_the_deepest_rank_known_to_ncbi(self) -> None:
         ranks = {"seq1": ("Eukaryota", "Obazoa", "Opisthokonta", "Unknown clade")}
@@ -416,6 +515,86 @@ class ResolveTaxidsTest(unittest.TestCase):
             taxids = database._resolve_taxids(ranks, taxonkit="taxonkit")
 
         self.assertEqual(taxids, {"seq1": 33154})
+
+    def test_disambiguates_a_homonym_with_the_records_accepted_ancestors(
+        self,
+    ) -> None:
+        name2taxid = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "Eukaryota\t2759\n"
+                "Fungi\t4751\n"
+                "Duplicata\t111\n"
+                "Duplicata\t222\n"
+            ),
+            stderr="",
+        )
+        lineages = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "111\tcellular organisms;Eukaryota;Fungi;Duplicata\n"
+                "222\tcellular organisms;Bacteria;Duplicata\n"
+            ),
+            stderr="",
+        )
+
+        with patch.object(
+            database.subprocess, "run", side_effect=[name2taxid, lineages]
+        ) as run:
+            taxids = database._resolve_taxids(
+                {"seq1": ("Eukaryota", "Fungi", "Duplicata")},
+                taxonkit="taxonkit",
+            )
+
+        self.assertEqual(taxids, {"seq1": 111})
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[1].args[0], ["taxonkit", "lineage"])
+        self.assertEqual(run.call_args_list[1].kwargs["input"], "111\n222\n")
+
+    def test_falls_back_when_a_homonym_cannot_be_disambiguated(self) -> None:
+        name2taxid = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Eukaryota\t2759\nDuplicata\t111\nDuplicata\t222\n",
+            stderr="",
+        )
+        lineages = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "111\tcellular organisms;Bacteria;Duplicata\n"
+                "222\tcellular organisms;Archaea;Duplicata\n"
+            ),
+            stderr="",
+        )
+
+        with patch.object(
+            database.subprocess, "run", side_effect=[name2taxid, lineages]
+        ):
+            taxids = database._resolve_taxids(
+                {"seq1": ("Eukaryota", "Duplicata", "Known deeper rank")},
+                taxonkit="taxonkit",
+            )
+
+        self.assertEqual(taxids, {"seq1": 2759})
+
+    def test_name_resolution_preserves_every_distinct_candidate(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Duplicata\t111\nDuplicata\t222\nDuplicata\t111\n",
+            stderr="",
+        )
+
+        with patch.object(database.subprocess, "run", return_value=completed):
+            candidates = database._name_to_taxid(
+                ["Duplicata"],
+                taxonkit="taxonkit",
+            )
+
+        self.assertEqual(candidates, {"Duplicata": [111, 222]})
 
     def test_skips_records_without_any_resolved_rank(self) -> None:
         ranks = {"seq1": ("Unknown clade",)}

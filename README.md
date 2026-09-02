@@ -30,6 +30,8 @@ to `petra.dmnd` in the same output directory:
 
 - `petra.rrna.cm`, the `cmpress`ed concatenation of the 5S, 5.8S, SSU and LSU
   Rfam families, for `cmscan`.
+- `petra.rrna.clanin`, built alongside `petra.rrna.cm` and filtered to the
+  families present in that CM, for `cmscan` clan competition.
 - `petra.ssu.fasta`, a BLAST database of SILVA SSURef NR99 and PR2, carrying
   NCBI taxon identifiers.
 - `petra.lsu.fasta`, a BLAST database of SILVA LSURef NR99 and EUKARYOME,
@@ -64,6 +66,26 @@ petra run \
   --technology ont \
   --output run-1
 ```
+
+#### Optional rRNA and tRNA analyses
+
+Add `--rrna` to detect rRNA genes with `cmscan` and classify SSU and LSU genes
+with `blastn`. It requires Infernal's `cmscan` and BLAST's `blastn` on `PATH`
+and produces:
+
+- `predictions.rrna.gff`, the full rRNA gene inventory, including 5S and 5.8S.
+- `predictions.rrna.tsv`, the best BLAST hit per SSU or LSU gene, with a
+  pipe-joined lineage and a `non_host` column.
+
+`--host-taxon` accepts an NCBI scientific name or TaxID. PETRA resolves it to
+the canonical scientific name and matches that name as a whole lineage field at
+the taxon's rank. Without a host, `non_host` is `-`. A hit resolved only above
+the host's rank is reported as non-host. Use `--rrna-min-alignment-length` to
+change the minimum reported BLAST alignment length from its default of 200.
+
+Add `--trna` to annotate tRNAs. It requires `tRNAscan-SE` on `PATH` and writes
+`predictions.trna.tsv` without pseudogenes, undetermined tRNAs or suppressor
+tRNAs, plus `predictions.trna.stats`.
 
 The run writes `predictions.summary.png`, a summary graph to eyeball the result:
 GC against depth of coverage with point area scaled by sequence length, both

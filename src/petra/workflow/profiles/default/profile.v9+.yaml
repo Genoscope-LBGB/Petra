@@ -9,6 +9,11 @@ set-threads:
   replace_taxids_with_lineages: 4
   whokaryote: 12
   minimap2: 24
+  cmscan: 8
+  blastn_ssu: 12
+  blastn_lsu: 12
+  replace_rrna_taxids_with_lineages: 4
+  trnascan: 10
 
 set-resources:
   minimap2:
@@ -51,5 +56,38 @@ set-resources:
     runtime: 60
     mem_mb: 10000
   split_assembly_by_domain:
+    runtime: 60
+    mem_mb: 10000
+  split_assembly_for_cmscan:
+    runtime: 60
+    mem_mb: 10000
+  cmscan:
+    runtime: 720
+    mem_mb: 32000
+  merge_cmscan_tblout:
+    runtime: 60
+    mem_mb: 10000
+  extract_rrna_genes:
+    runtime: 60
+    mem_mb: 20000
+  blastn_ssu:
+    runtime: 720
+    mem_mb: 32000
+  blastn_lsu:
+    runtime: 720
+    mem_mb: 32000
+  select_rrna_best_hits:
+    runtime: 60
+    mem_mb: 10000
+  replace_rrna_taxids_with_lineages:
+    runtime: 60
+    mem_mb: 10000
+  summarize_rrna_hits:
+    runtime: 60
+    mem_mb: 10000
+  trnascan:
+    runtime: 720
+    mem_mb: 64000
+  filter_trna_predictions:
     runtime: 60
     mem_mb: 10000

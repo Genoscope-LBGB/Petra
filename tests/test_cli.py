@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from petra.cli import SequencingTechnology, app
 from petra.database import DatabaseBuildError
+from petra.taxonomy import HostTaxonError
 
 
 class RunCliTest(unittest.TestCase):
@@ -19,10 +20,29 @@ class RunCliTest(unittest.TestCase):
         self.database = self.directory / "database"
         self.database.mkdir()
         (self.database / "petra.dmnd").touch()
+        for filename in (
+            "petra.rrna.cm",
+            "petra.rrna.clanin",
+            "petra.ssu.fasta",
+            "petra.lsu.fasta",
+        ):
+            (self.database / filename).touch()
         self.assembly = self.directory / "assembly.fasta"
         self.reads = self.directory / "reads.fastq"
         for path in (self.assembly, self.reads):
             path.touch()
+
+    def run_arguments(self, *additional: str) -> list[str]:
+        return [
+            "run",
+            "--assembly",
+            str(self.assembly),
+            "--database",
+            str(self.database),
+            "--long-reads",
+            str(self.reads),
+            *additional,
+        ]
 
     def test_accepts_repeated_long_reads_and_ont_technology(self) -> None:
         second_reads = self.directory / "second.fastq"
@@ -160,6 +180,164 @@ class RunCliTest(unittest.TestCase):
             result.output,
         )
         launch.assert_not_called()
+
+    def test_rrna_populates_workflow_config(self) -> None:
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(app, self.run_arguments("--rrna"))
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertIs(workflow_config["rrna"], True)
+        self.assertIs(workflow_config["trna"], False)
+        self.assertEqual(workflow_config["rrna_chunks"], 16)
+        self.assertEqual(workflow_config["rrna_min_alignment_length"], 200)
+        self.assertIsNone(workflow_config["host_taxon"])
+        self.assertEqual(
+            workflow_config["covariance_model"],
+            self.database / "petra.rrna.cm",
+        )
+        self.assertEqual(
+            workflow_config["clan_info"],
+            self.database / "petra.rrna.clanin",
+        )
+        self.assertEqual(
+            workflow_config["ssu_database"],
+            self.database / "petra.ssu.fasta",
+        )
+        self.assertEqual(
+            workflow_config["lsu_database"],
+            self.database / "petra.lsu.fasta",
+        )
+
+    def test_rejects_rrna_when_an_rna_database_file_is_missing(self) -> None:
+        (self.database / "petra.rrna.clanin").unlink()
+
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(app, self.run_arguments("--rrna"))
+
+        self.assertEqual(result.exit_code, 2)
+        output = _flatten(result.output)
+        self.assertIn("petra.rrna.clanin", output)
+        self.assertIn(
+            f"petra build-db --output {self.database} --build-rna-dbs "
+            "--skip-diamond-db",
+            output,
+        )
+        launch.assert_not_called()
+
+    def test_rejects_host_taxon_without_rrna(self) -> None:
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                self.run_arguments("--host-taxon", "9606"),
+            )
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("--host-taxon requires --rrna.", _flatten(result.output))
+        launch.assert_not_called()
+
+    def test_resolves_host_taxon_into_workflow_config(self) -> None:
+        with (
+            patch(
+                "petra.cli.resolve_host_taxon",
+                return_value="Homo sapiens",
+            ) as resolve,
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                self.run_arguments("--rrna", "--host-taxon", "9606"),
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        resolve.assert_called_once_with("9606")
+        self.assertEqual(
+            launch.call_args.kwargs["workflow_config"]["host_taxon"],
+            "Homo sapiens",
+        )
+
+    def test_reports_host_taxon_resolution_failure(self) -> None:
+        with (
+            patch(
+                "petra.cli.resolve_host_taxon",
+                side_effect=HostTaxonError("TaxID 123 is not usable."),
+            ),
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                self.run_arguments("--rrna", "--host-taxon", "123"),
+            )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("Error: TaxID 123 is not usable.", result.output)
+        launch.assert_not_called()
+
+    def test_trna_requires_trnascan_se(self) -> None:
+        def which_without_trnascan(executable: str) -> str | None:
+            return None if executable == "tRNAscan-SE" else f"/usr/bin/{executable}"
+
+        with (
+            patch("petra.cli.shutil.which", side_effect=which_without_trnascan),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(app, self.run_arguments("--trna"))
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn(
+            "Required executables not found on PATH: tRNAscan-SE.",
+            result.output,
+        )
+        launch.assert_not_called()
+
+    def test_rrna_requires_cmscan_and_blastn(self) -> None:
+        def which_without_rrna_tools(executable: str) -> str | None:
+            return (
+                None
+                if executable in {"cmscan", "blastn"}
+                else f"/usr/bin/{executable}"
+            )
+
+        with (
+            patch("petra.cli.shutil.which", side_effect=which_without_rrna_tools),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(app, self.run_arguments("--rrna"))
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn(
+            "Required executables not found on PATH: cmscan, blastn.",
+            result.output,
+        )
+        launch.assert_not_called()
+
+    def test_plain_run_does_not_require_rna_tools(self) -> None:
+        def which_without_rna_tools(executable: str) -> str | None:
+            return (
+                None
+                if executable in {"cmscan", "blastn", "tRNAscan-SE"}
+                else f"/usr/bin/{executable}"
+            )
+
+        with (
+            patch("petra.cli.shutil.which", side_effect=which_without_rna_tools),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(app, self.run_arguments())
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        launch.assert_called_once()
 
 
 def _flatten(output: str) -> str:
