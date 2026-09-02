@@ -71,10 +71,11 @@ petra run \
 
 Add `--rrna` to detect rRNA genes with `cmscan` and classify SSU and LSU genes
 with `blastn`. It requires Infernal's `cmscan` and BLAST's `blastn` on `PATH`
-and produces:
+and produces these files under the output directory's `rna/` subdirectory:
 
-- `predictions.rrna.gff`, the full rRNA gene inventory, including 5S and 5.8S.
-- `predictions.rrna.tsv`, the best BLAST hit per SSU or LSU gene, with a
+- `rna/predictions.rrna.gff`, the full rRNA gene inventory, including 5S and
+  5.8S.
+- `rna/predictions.rrna.tsv`, the best BLAST hit per SSU or LSU gene, with a
   pipe-joined lineage and a `non_host` column.
 
 `--host-taxon` accepts an NCBI scientific name or TaxID. PETRA resolves the
@@ -84,8 +85,8 @@ host phylum is reported as non-host. Use `--rrna-min-alignment-length` to change
 the minimum reported BLAST alignment length from its default of 200.
 
 Add `--trna` to annotate tRNAs. It requires `tRNAscan-SE` on `PATH` and writes
-`predictions.trna.tsv` without pseudogenes, undetermined tRNAs or suppressor
-tRNAs, plus `predictions.trna.stats`.
+`rna/predictions.trna.tsv` without pseudogenes, undetermined tRNAs or suppressor
+tRNAs, plus `rna/predictions.trna.stats`.
 
 The run writes `predictions.summary.png`, a summary graph to eyeball the result:
 GC against depth of coverage with point area scaled by sequence length, both
