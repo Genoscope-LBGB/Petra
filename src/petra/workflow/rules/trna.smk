@@ -8,8 +8,8 @@ rule trnascan:
     input:
         assembly=config["assembly"],
     output:
-        predictions=temp("predictions.trna.raw.tsv"),
-        stats="predictions.trna.stats",
+        predictions=temp("rna/predictions.trna.raw.tsv"),
+        stats="rna/predictions.trna.stats",
     log:
         "logs/trnascan.log",
     benchmark:
@@ -24,9 +24,9 @@ rule trnascan:
 rule filter_trna_predictions:
     """Drop pseudogene, undetermined and suppressor predictions."""
     input:
-        predictions="predictions.trna.raw.tsv",
+        predictions="rna/predictions.trna.raw.tsv",
     output:
-        predictions="predictions.trna.tsv",
+        predictions="rna/predictions.trna.tsv",
     log:
         "logs/filter_trna_predictions.log",
     benchmark:

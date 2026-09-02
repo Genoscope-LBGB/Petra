@@ -1,6 +1,6 @@
 _RRNA_CHUNK_INDICES = list(range(config["rrna_chunks"]))
-_RRNA_CHUNKS = expand("rrna/chunk.{index}.fasta", index=_RRNA_CHUNK_INDICES)
-_RRNA_TBLOUTS = expand("rrna/chunk.{index}.tblout", index=_RRNA_CHUNK_INDICES)
+_RRNA_CHUNKS = expand("rna/rrna/chunk.{index}.fasta", index=_RRNA_CHUNK_INDICES)
+_RRNA_TBLOUTS = expand("rna/rrna/chunk.{index}.tblout", index=_RRNA_CHUNK_INDICES)
 # The rank format is spelled out in the shell command, as in rules/diamond.smk,
 # because Snakemake reads '{rank}' in params as a wildcard.
 
@@ -27,11 +27,11 @@ rule cmscan:
     An empty chunk occurs when the assembly holds fewer sequences than chunks.
     """
     input:
-        chunk="rrna/chunk.{index}.fasta",
+        chunk="rna/rrna/chunk.{index}.fasta",
         model=config["covariance_model"],
         clan=config["clan_info"],
     output:
-        tblout=temp("rrna/chunk.{index}.tblout"),
+        tblout=temp("rna/rrna/chunk.{index}.tblout"),
     log:
         "logs/cmscan.{index}.log",
     benchmark:
@@ -49,7 +49,7 @@ rule merge_cmscan_tblout:
     input:
         tblout=_RRNA_TBLOUTS,
     output:
-        tblout=temp("predictions.rrna.tblout"),
+        tblout=temp("rna/predictions.rrna.tblout"),
     log:
         "logs/merge_cmscan_tblout.log",
     benchmark:
@@ -62,12 +62,12 @@ rule extract_rrna_genes:
     """Write the rRNA gene inventory and the SSU and LSU sequences to classify."""
     input:
         assembly=config["assembly"],
-        tblout="predictions.rrna.tblout",
+        tblout="rna/predictions.rrna.tblout",
     output:
-        gff="predictions.rrna.gff",
-        genes=temp("predictions.rrna.genes.tsv"),
-        ssu=temp("predictions.rrna.ssu.fasta"),
-        lsu=temp("predictions.rrna.lsu.fasta"),
+        gff="rna/predictions.rrna.gff",
+        genes=temp("rna/predictions.rrna.genes.tsv"),
+        ssu=temp("rna/predictions.rrna.ssu.fasta"),
+        lsu=temp("rna/predictions.rrna.lsu.fasta"),
     log:
         "logs/extract_rrna_genes.log",
     benchmark:
@@ -79,10 +79,10 @@ rule extract_rrna_genes:
 rule blastn_ssu:
     """Align the small subunit genes against the SILVA and PR2 database."""
     input:
-        query="predictions.rrna.ssu.fasta",
+        query="rna/predictions.rrna.ssu.fasta",
         database=config["ssu_database"],
     output:
-        alignment=temp("predictions.rrna.ssu.blast.tsv"),
+        alignment=temp("rna/predictions.rrna.ssu.blast.tsv"),
     log:
         "logs/blastn_ssu.log",
     benchmark:
@@ -98,10 +98,10 @@ rule blastn_ssu:
 rule blastn_lsu:
     """Align the large subunit genes against the SILVA and EUKARYOME database."""
     input:
-        query="predictions.rrna.lsu.fasta",
+        query="rna/predictions.rrna.lsu.fasta",
         database=config["lsu_database"],
     output:
-        alignment=temp("predictions.rrna.lsu.blast.tsv"),
+        alignment=temp("rna/predictions.rrna.lsu.blast.tsv"),
     log:
         "logs/blastn_lsu.log",
     benchmark:
@@ -117,11 +117,11 @@ rule blastn_lsu:
 rule select_rrna_best_hits:
     """Keep one hit per rRNA gene, breaking bitscore ties deterministically."""
     input:
-        genes="predictions.rrna.genes.tsv",
-        ssu="predictions.rrna.ssu.blast.tsv",
-        lsu="predictions.rrna.lsu.blast.tsv",
+        genes="rna/predictions.rrna.genes.tsv",
+        ssu="rna/predictions.rrna.ssu.blast.tsv",
+        lsu="rna/predictions.rrna.lsu.blast.tsv",
     output:
-        hits=temp("predictions.rrna.hits.tsv"),
+        hits=temp("rna/predictions.rrna.hits.tsv"),
     log:
         "logs/select_rrna_best_hits.log",
     benchmark:
@@ -135,9 +135,9 @@ rule select_rrna_best_hits:
 rule replace_rrna_taxids_with_lineages:
     """Replace the subject TaxID of every retained hit with a fixed-rank lineage."""
     input:
-        hits="predictions.rrna.hits.tsv",
+        hits="rna/predictions.rrna.hits.tsv",
     output:
-        lineages=temp("predictions.rrna.lineages.tsv"),
+        lineages=temp("rna/predictions.rrna.lineages.tsv"),
     log:
         "logs/replace_rrna_taxids_with_lineages.log",
     benchmark:
@@ -157,9 +157,9 @@ rule replace_rrna_taxids_with_lineages:
 rule summarize_rrna_hits:
     """Report the classified rRNA genes and flag the ones outside the host."""
     input:
-        lineages="predictions.rrna.lineages.tsv",
+        lineages="rna/predictions.rrna.lineages.tsv",
     output:
-        taxonomy="predictions.rrna.tsv",
+        taxonomy="rna/predictions.rrna.tsv",
     log:
         "logs/summarize_rrna_hits.log",
     benchmark:

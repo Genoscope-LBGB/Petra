@@ -17,9 +17,9 @@ _ALL_TARGETS = [
     "predictions.unassigned.fasta",
 ]
 if config["rrna"]:
-    _ALL_TARGETS.extend(["predictions.rrna.gff", "predictions.rrna.tsv"])
+    _ALL_TARGETS.extend(["rna/predictions.rrna.gff", "rna/predictions.rrna.tsv"])
 if config["trna"]:
-    _ALL_TARGETS.extend(["predictions.trna.tsv", "predictions.trna.stats"])
+    _ALL_TARGETS.extend(["rna/predictions.trna.tsv", "rna/predictions.trna.stats"])
 
 
 rule all:
