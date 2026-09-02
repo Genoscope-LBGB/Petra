@@ -27,7 +27,7 @@ from .taxonomy import HostTaxonError, resolve_host_phylum
 
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
 _RUN_CONTEXT = {**_HELP_CONTEXT, "allow_extra_args": True}
-_RRNA_CHUNKS = 16
+_RRNA_CHUNKS = 4
 
 
 class SequencingTechnology(str, Enum):
