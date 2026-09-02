@@ -77,11 +77,11 @@ and produces:
 - `predictions.rrna.tsv`, the best BLAST hit per SSU or LSU gene, with a
   pipe-joined lineage and a `non_host` column.
 
-`--host-taxon` accepts an NCBI scientific name or TaxID. PETRA resolves it to
-the canonical scientific name and matches that name as a whole lineage field at
-the taxon's rank. Without a host, `non_host` is `-`. A hit resolved only above
-the host's rank is reported as non-host. Use `--rrna-min-alignment-length` to
-change the minimum reported BLAST alignment length from its default of 200.
+`--host-taxon` accepts an NCBI scientific name or TaxID. PETRA resolves the
+taxon to its NCBI phylum and matches that phylum as a whole lineage field.
+Without a host, `non_host` is `-`. A hit whose lineage does not resolve to the
+host phylum is reported as non-host. Use `--rrna-min-alignment-length` to change
+the minimum reported BLAST alignment length from its default of 200.
 
 Add `--trna` to annotate tRNAs. It requires `tRNAscan-SE` on `PATH` and writes
 `predictions.trna.tsv` without pseudogenes, undetermined tRNAs or suppressor
