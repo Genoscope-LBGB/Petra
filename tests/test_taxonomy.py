@@ -6,42 +6,53 @@ from unittest.mock import patch
 
 from petra.taxonomy import HostTaxonError, LINEAGE_RANKS, resolve_host_taxon
 
+_LINEAGE_ARGUMENTS = ["lineage", "--no-lineage", "--show-name", "--show-rank"]
+
 
 class ResolveHostTaxonTest(unittest.TestCase):
-    def test_resolves_a_taxid_to_its_canonical_scientific_name(self) -> None:
+    def test_resolves_a_taxid_with_a_single_taxonkit_call(self) -> None:
         with patch(
             "petra.taxonomy.subprocess.run",
-            side_effect=[
-                _process("9606\tHomo sapiens\n"),
-                _process(f"9606\t{_lineage(species='Homo sapiens')}\n"),
-            ],
+            side_effect=[_process("9606\tHomo sapiens\tspecies\n")],
         ) as run:
             result = resolve_host_taxon("9606")
 
         self.assertEqual(result, "Homo sapiens")
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_count, 1)
         self.assertEqual(
-            run.call_args_list[0].args[0],
-            ["taxonkit", "lineage", "--no-lineage", "--show-name"],
+            run.call_args_list[0].args[0], ["taxonkit", *_LINEAGE_ARGUMENTS]
         )
 
-    def test_resolves_a_name_before_obtaining_the_canonical_name(self) -> None:
+    def test_resolves_a_name_with_two_taxonkit_calls(self) -> None:
         with patch(
             "petra.taxonomy.subprocess.run",
             side_effect=[
                 _process("human\t9606\n"),
-                _process("9606\tHomo sapiens\n"),
-                _process(f"9606\t{_lineage(species='Homo sapiens')}\n"),
+                _process("9606\tHomo sapiens\tspecies\n"),
             ],
         ) as run:
             result = resolve_host_taxon("human", taxonkit_executable="custom-taxonkit")
 
         self.assertEqual(result, "Homo sapiens")
+        self.assertEqual(run.call_count, 2)
         self.assertEqual(
             run.call_args_list[0].args[0],
             ["custom-taxonkit", "name2taxid"],
         )
         self.assertEqual(run.call_args_list[0].kwargs["input"], "human\n")
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            ["custom-taxonkit", *_LINEAGE_ARGUMENTS],
+        )
+
+    def test_accepts_a_domain_however_ncbi_spells_its_rank(self) -> None:
+        for rank in ("domain", "superkingdom", "acellular root"):
+            with self.subTest(rank=rank):
+                with patch(
+                    "petra.taxonomy.subprocess.run",
+                    side_effect=[_process(f"2\tBacteria\t{rank}\n")],
+                ):
+                    self.assertEqual(resolve_host_taxon("2"), "Bacteria")
 
     def test_rejects_an_unknown_name(self) -> None:
         with patch(
@@ -69,15 +80,12 @@ class ResolveHostTaxonTest(unittest.TestCase):
     def test_rejects_a_taxon_at_a_rank_petra_does_not_report(self) -> None:
         with patch(
             "petra.taxonomy.subprocess.run",
-            side_effect=[
-                _process("123\tExample tribe\n"),
-                _process(f"123\t{_lineage(family='Example family')}\n"),
-            ],
+            side_effect=[_process("1912919\tNasutitermitinae\tsubtribe\n")],
         ):
             with self.assertRaises(HostTaxonError) as caught:
-                resolve_host_taxon("123")
+                resolve_host_taxon("1912919")
 
-        self.assertIn("rank PETRA does not report", str(caught.exception))
+        self.assertIn("is a subtribe", str(caught.exception))
         for rank in LINEAGE_RANKS:
             self.assertIn(rank, str(caught.exception))
 
@@ -105,12 +113,6 @@ def _process(
         stdout=stdout,
         stderr=stderr,
     )
-
-
-def _lineage(**rank_values: str) -> str:
-    values = {rank: "N/A" for rank in LINEAGE_RANKS}
-    values.update(rank_values)
-    return ";".join(values[rank] for rank in LINEAGE_RANKS)
 
 
 if __name__ == "__main__":

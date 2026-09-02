@@ -20,11 +20,10 @@ LINEAGE_RANKS = (
     "subspecies",
 )
 
-_LINEAGE_FORMAT = (
-    "{domain|acellular root|superkingdom};{kingdom};{phylum};{subphylum};"
-    "{superclass};{class};{superorder};{order};{suborder};{family};"
-    "{subfamily};{genus};{subgenus};{species};{subspecies}"
-)
+# Ranks reformat2 can place in a lineage column of LINEAGE_RANKS: the domain
+# column accepts these three spellings, every other column its own rank.
+_DOMAIN_RANKS = ("domain", "acellular root", "superkingdom")
+_REPORTED_RANKS = frozenset(LINEAGE_RANKS) | frozenset(_DOMAIN_RANKS)
 
 
 class HostTaxonError(RuntimeError):
@@ -36,68 +35,42 @@ def resolve_host_taxon(
     *,
     taxonkit_executable: str = "taxonkit",
 ) -> str:
-    """Resolve a user-facing taxon identifier to its canonical scientific name."""
+    """Resolve a user-facing taxon identifier to its canonical scientific name.
+
+    Every taxonkit invocation reads the whole NCBI taxonomy dump, which takes
+    tens of seconds on a shared filesystem, so a TaxID costs one call and a
+    name two.
+    """
     query = value.strip()
     taxid = query if query.isdigit() else _resolve_name(query, taxonkit_executable)
 
-    lineage_output = _run_taxonkit(
+    output = _run_taxonkit(
         taxonkit_executable,
-        ["lineage", "--no-lineage", "--show-name"],
+        ["lineage", "--no-lineage", "--show-name", "--show-rank"],
         input_text=f"{taxid}\n",
     )
-    lineage_lines = lineage_output.splitlines()
-    if len(lineage_lines) != 1:
+    lines = output.splitlines()
+    if len(lines) != 1:
         raise HostTaxonError(
             "taxonkit lineage returned an unexpected number of records for "
             f"TaxID {taxid}."
         )
-    lineage_fields = lineage_lines[0].split("\t")
-    if len(lineage_fields) != 2 or lineage_fields[0] != taxid or not lineage_fields[1]:
+    fields = lines[0].split("\t")
+    if len(fields) != 3 or fields[0] != taxid or not fields[1]:
         raise HostTaxonError(
-            "taxonkit lineage returned an unexpected output shape for "
-            f"TaxID {taxid}; expected TaxID and scientific name."
+            "taxonkit lineage returned an unexpected output shape for TaxID "
+            f"{taxid}; expected TaxID, scientific name and rank."
         )
-    canonical_name = lineage_fields[1]
+    canonical_name, rank = fields[1], fields[2]
 
-    ranked_output = _run_taxonkit(
-        taxonkit_executable,
-        [
-            "reformat2",
-            "--format",
-            _LINEAGE_FORMAT,
-            "--miss-rank-repl",
-            "N/A",
-            "--miss-taxid-repl",
-            "N/A",
-        ],
-        input_text=f"{taxid}\n",
-    )
-    ranked_lines = ranked_output.splitlines()
-    if len(ranked_lines) != 1:
-        raise HostTaxonError(
-            "taxonkit reformat2 returned an unexpected number of records for "
-            f"TaxID {taxid}."
-        )
-    ranked_fields = ranked_lines[0].split("\t")
-    if len(ranked_fields) != 2 or ranked_fields[0] != taxid:
-        raise HostTaxonError(
-            "taxonkit reformat2 returned an unexpected output shape for "
-            f"TaxID {taxid}; expected TaxID and fixed-rank lineage."
-        )
-    lineage_ranks = ranked_fields[1].split(";")
-    if len(lineage_ranks) != len(LINEAGE_RANKS):
-        raise HostTaxonError(
-            "taxonkit reformat2 returned an unexpected fixed-rank lineage for "
-            f"TaxID {taxid}."
-        )
-
-    # non_host compares whole fields at exactly these ranks. Accepting a tribe or
-    # another unreported rank would make every hit look non-host.
-    if canonical_name not in lineage_ranks:
+    # non_host compares whole lineage fields, and a lineage carries exactly the
+    # ranks of LINEAGE_RANKS. A taxon at any other rank, a tribe or an unranked
+    # clade, appears in no field and would make every hit look non-host.
+    if rank not in _REPORTED_RANKS:
         ranks = ", ".join(LINEAGE_RANKS)
         raise HostTaxonError(
-            f"{canonical_name} (TaxID {taxid}) sits at a rank PETRA does not "
-            f"report. Choose a taxon at one of these ranks: {ranks}."
+            f"{canonical_name} (TaxID {taxid}) is a {rank}, a rank PETRA does "
+            f"not report. Choose a taxon at one of these ranks: {ranks}."
         )
     return canonical_name
 
