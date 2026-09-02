@@ -379,6 +379,7 @@ def _build_covariance_model(*, sources: Path, database: Path, cmpress: str) -> N
         ) from error
 
     models = []
+    families = []
     for accession in RRNA_CM_ACCESSIONS:
         model = model_directory / f"{accession}.cm"
         _download(
@@ -387,6 +388,7 @@ def _build_covariance_model(*, sources: Path, database: Path, cmpress: str) -> N
             f"Rfam covariance model {accession}",
         )
         models.append(model)
+        families.append(_covariance_model_name(model, accession))
 
     logger.info("Concatenating %d covariance models into %s", len(models), database)
     try:
@@ -404,12 +406,46 @@ def _build_covariance_model(*, sources: Path, database: Path, cmpress: str) -> N
     _write_clan_info(
         source=clan_source,
         destination=database.with_name(CLAN_INFO_FILENAME),
+        families=frozenset(families),
     )
 
 
-def _write_clan_info(*, source: Path, destination: Path) -> None:
+def _covariance_model_name(model: Path, accession: str) -> str:
+    """Read the family name a covariance model is known by.
+
+    Rfam clan information lists family names rather than accessions, so the
+    names are taken from the downloaded models instead of from a second list
+    that would have to be kept in step with RRNA_CM_ACCESSIONS.
+    """
+    name: str | None = None
+    declared_accession: str | None = None
+    try:
+        with model.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                key, _, value = line.partition(" ")
+                if key == "NAME" and name is None:
+                    name = value.strip()
+                elif key == "ACC" and declared_accession is None:
+                    declared_accession = value.strip()
+                if name and declared_accession:
+                    break
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not read {model}: {error}") from error
+    if not name or declared_accession != accession:
+        raise DatabaseBuildError(
+            f"{model} does not declare a name for {accession}; the Rfam "
+            "covariance model layout changed."
+        )
+    return name
+
+
+def _write_clan_info(
+    *,
+    source: Path,
+    destination: Path,
+    families: frozenset[str],
+) -> None:
     clans: list[tuple[str, list[str]]] = []
-    selected = frozenset(RRNA_CM_ACCESSIONS)
     try:
         with source.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
@@ -417,9 +453,7 @@ def _write_clan_info(*, source: Path, destination: Path) -> None:
                 if len(fields) < 3:
                     continue
                 members = list(
-                    dict.fromkeys(
-                        accession for accession in fields[1:] if accession in selected
-                    )
+                    dict.fromkeys(family for family in fields[1:] if family in families)
                 )
                 if len(members) >= 2:
                     clans.append((fields[0], members))
@@ -428,7 +462,8 @@ def _write_clan_info(*, source: Path, destination: Path) -> None:
 
     if not clans:
         raise DatabaseBuildError(
-            f"No relevant clans found in {source}; the Rfam clan file layout changed."
+            f"No clan of the covariance model families found in {source}; the "
+            "Rfam clan file layout changed."
         )
 
     try:
@@ -438,7 +473,7 @@ def _write_clan_info(*, source: Path, destination: Path) -> None:
     except OSError as error:
         raise DatabaseBuildError(f"Could not write {destination}: {error}") from error
     logger.info(
-        "Kept %d Rfam clans containing %d members",
+        "Kept %d Rfam clans containing %d families",
         len(clans),
         sum(len(members) for _, members in clans),
     )

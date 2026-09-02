@@ -57,11 +57,31 @@ EUKARYOME_FASTA = (
     ">MH863990;k__Fungi;p__Basidiomycota;s__Agaricus_bisporus\n"
     "TTAACCGG\n"
 )
-CM_PAYLOAD = "INFERNAL1/a\nNAME  model\n//\n"
+# Rfam clan information lists family names, not accessions, and a covariance
+# model declares both.
+CM_FAMILIES = {
+    "RF00001": "5S_rRNA",
+    "RF00002": "5_8S_rRNA",
+    "RF00177": "SSU_rRNA_bacteria",
+    "RF01959": "SSU_rRNA_archaea",
+    "RF01960": "SSU_rRNA_eukarya",
+    "RF02540": "LSU_rRNA_archaea",
+    "RF02541": "LSU_rRNA_bacteria",
+    "RF02542": "SSU_rRNA_microsporidia",
+    "RF02543": "LSU_rRNA_eukarya",
+    "RF02545": "SSU_trypano_mito",
+    "RF02546": "LSU_trypano_mito",
+}
+CM_PAYLOAD = (
+    "INFERNAL1/a [1.1.4 | Dec 2020]\nNAME     {name}\nACC      {accession}\n//\n"
+)
 RFAM_CLANIN = (
-    "CL00111 RF00177 RF01960 RF99999\n"
-    "CL00999 RF00001 RF99998\n"
-    "CL00112 RF02540 RF02541 RF02542\n"
+    "CL00111\tSSU_rRNA_archaea\tSSU_rRNA_bacteria\tSSU_rRNA_eukarya\t"
+    "SSU_rRNA_microsporidia\tSSU_trypano_mito\n"
+    "CL00112\t5_8S_rRNA\tLSU_rRNA_archaea\tLSU_rRNA_bacteria\tLSU_rRNA_eukarya\t"
+    "LSU_trypano_mito\n"
+    "CL00113\t5S_rRNA\tmtPerm-5S\n"
+    "CL00001\talpha_tmRNA\tbeta_tmRNA\ttmRNA\n"
 )
 
 _STUB_TEMPLATE = """\
@@ -132,7 +152,9 @@ def _payloads() -> dict[str, bytes]:
     }
     for accession in database.RRNA_CM_ACCESSIONS:
         url = database.RFAM_CM_URL.format(accession=accession)
-        payloads[url] = CM_PAYLOAD.replace("model", accession).encode("utf-8")
+        payloads[url] = CM_PAYLOAD.format(
+            name=CM_FAMILIES[accession], accession=accession
+        ).encode("utf-8")
     return payloads
 
 
@@ -214,8 +236,9 @@ class BuildRnaDatabasesTest(unittest.TestCase):
         databases = self._build()
 
         model = databases.covariance_model.read_text(encoding="utf-8")
-        for accession in database.RRNA_CM_ACCESSIONS:
-            self.assertIn(f"NAME  {accession}", model)
+        for accession, family in CM_FAMILIES.items():
+            self.assertIn(f"NAME     {family}", model)
+            self.assertIn(f"ACC      {accession}", model)
         self.assertEqual(
             _stub_arguments(self.tools, "cmpress"),
             [["petra.rrna.cm"]],
@@ -348,27 +371,33 @@ class BuildRnaDatabasesTest(unittest.TestCase):
 
 
 class RfamClanInfoTest(unittest.TestCase):
-    def test_keeps_only_selected_multi_member_clans(self) -> None:
+    def test_keeps_only_multi_member_clans_of_our_families(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "Rfam.clanin"
             destination = directory / database.CLAN_INFO_FILENAME
             source.write_text(RFAM_CLANIN, encoding="utf-8")
 
-            database._write_clan_info(source=source, destination=destination)
+            database._write_clan_info(
+                source=source,
+                destination=destination,
+                families=frozenset(CM_FAMILIES.values()),
+            )
 
             self.assertEqual(
                 destination.read_text(encoding="utf-8"),
-                "CL00111\tRF00177\tRF01960\n"
-                "CL00112\tRF02540\tRF02541\tRF02542\n",
+                "CL00111\tSSU_rRNA_archaea\tSSU_rRNA_bacteria\tSSU_rRNA_eukarya\t"
+                "SSU_rRNA_microsporidia\tSSU_trypano_mito\n"
+                "CL00112\t5_8S_rRNA\tLSU_rRNA_archaea\tLSU_rRNA_bacteria\t"
+                "LSU_rRNA_eukarya\tLSU_trypano_mito\n",
             )
 
-    def test_rejects_a_clan_file_without_relevant_competitors(self) -> None:
+    def test_rejects_clan_information_listing_accessions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             source = directory / "Rfam.clanin"
             source.write_text(
-                "CL00111 RF00177 RF99999\nCL99999 RF99998 RF99999\n",
+                "CL00111\tRF00177\tRF01960\nCL00112\tRF02540\tRF02541\n",
                 encoding="utf-8",
             )
 
@@ -376,9 +405,46 @@ class RfamClanInfoTest(unittest.TestCase):
                 database._write_clan_info(
                     source=source,
                     destination=directory / database.CLAN_INFO_FILENAME,
+                    families=frozenset(CM_FAMILIES.values()),
                 )
 
         self.assertIn("Rfam clan file layout changed", str(raised.exception))
+
+
+class CovarianceModelNameTest(unittest.TestCase):
+    def test_reads_the_family_name_declared_by_the_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            model = Path(temporary) / "RF01960.cm"
+            model.write_text(
+                CM_PAYLOAD.format(name="SSU_rRNA_eukarya", accession="RF01960"),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                database._covariance_model_name(model, "RF01960"),
+                "SSU_rRNA_eukarya",
+            )
+
+    def test_rejects_a_model_of_another_accession(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            model = Path(temporary) / "RF01960.cm"
+            model.write_text(
+                CM_PAYLOAD.format(name="SSU_rRNA_bacteria", accession="RF00177"),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(DatabaseBuildError) as raised:
+                database._covariance_model_name(model, "RF01960")
+
+        self.assertIn("does not declare a name for RF01960", str(raised.exception))
+
+    def test_rejects_a_model_without_a_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            model = Path(temporary) / "RF01960.cm"
+            model.write_text("INFERNAL1/a\nACC      RF01960\n//\n", encoding="utf-8")
+
+            with self.assertRaises(DatabaseBuildError):
+                database._covariance_model_name(model, "RF01960")
 
 
 class SilvaUrlTest(unittest.TestCase):
