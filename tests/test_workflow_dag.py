@@ -47,12 +47,16 @@ class WorkflowDagTest(unittest.TestCase):
         self._assert_job_count(rrna, "cmscan", 16)
         self._assert_job_count(rrna, "summarize_rrna_hits", 1)
         self._assert_job_absent(rrna, "trnascan")
+        self.assertIn("rna/predictions.rrna.gff", rrna)
+        self.assertIn("rna/predictions.rrna.tsv", rrna)
 
         trna = self._dry_run(rrna=False, trna=True)
         self._assert_job_count(trna, "split_assembly_by_domain", 1)
         self._assert_job_absent(trna, "cmscan")
         self._assert_job_absent(trna, "summarize_rrna_hits")
         self._assert_job_count(trna, "trnascan", 1)
+        self.assertIn("rna/predictions.trna.tsv", trna)
+        self.assertIn("rna/predictions.trna.stats", trna)
 
     def _dry_run(self, *, rrna: bool, trna: bool) -> str:
         config = {
@@ -92,8 +96,6 @@ class WorkflowDagTest(unittest.TestCase):
                 "--cores",
                 "1",
                 "--dry-run",
-                "--quiet",
-                "rules",
             ],
             capture_output=True,
             text=True,
