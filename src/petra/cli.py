@@ -45,20 +45,28 @@ class SummaryPanel(str, Enum):
     ASSIGNMENT_STATUS = "assignment-status"
 
 
-def _require_executables(*, rrna: bool, trna: bool) -> None:
-    required = [
-        "diamond",
-        "pyrodigal",
-        "taxonkit",
-        "cd-hit",
-        "minimap2",
-        "samtools",
-        "segmasker",
-        "whokaryote.py",
-        "bedtools",
-    ]
+def _require_executables(
+    *, rrna: bool, trna: bool, skip_taxonomic_assignment: bool
+) -> None:
+    required = (
+        []
+        if skip_taxonomic_assignment
+        else [
+            "diamond",
+            "pyrodigal",
+            "taxonkit",
+            "cd-hit",
+            "minimap2",
+            "samtools",
+            "segmasker",
+            "whokaryote.py",
+            "bedtools",
+        ]
+    )
     if rrna:
         required.extend(("cmscan", "blastn"))
+        if skip_taxonomic_assignment:
+            required.append("taxonkit")
     if trna:
         required.append("tRNAscan-SE")
     missing = [
@@ -73,15 +81,6 @@ def _require_executables(*, rrna: bool, trna: bool) -> None:
 def _validate_alpha(value: float) -> float:
     if value <= 0:
         raise typer.BadParameter("The alpha-majority threshold must be greater than 0.")
-    return value
-
-
-def _validate_database_directory(value: Path) -> Path:
-    if not (value / DIAMOND_DATABASE_FILENAME).is_file():
-        raise typer.BadParameter(
-            f"{DIAMOND_DATABASE_FILENAME} not found in {value}. Build it with "
-            f"'petra build-db --output {value}'."
-        )
     return value
 
 
@@ -159,30 +158,35 @@ def run(
         ),
     ],
     database: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--database",
             "-d",
-            help="Database directory produced by 'petra build-db'.",
+            help=(
+                "Database directory produced by 'petra build-db'. Required for "
+                "taxonomic assignment and rRNA analysis."
+            ),
             exists=True,
             file_okay=False,
             readable=True,
-            callback=_validate_database_directory,
             rich_help_panel="Inputs",
         ),
-    ],
+    ] = None,
     long_reads: Annotated[
-        list[Path],
+        list[Path] | None,
         typer.Option(
             "--long-reads",
             "-r",
-            help="Long-read sequence file to map; repeat for multiple files.",
+            help=(
+                "Long-read sequence file to map; repeat for multiple files. "
+                "Required unless taxonomic assignment is skipped."
+            ),
             exists=True,
             dir_okay=False,
             readable=True,
             rich_help_panel="Inputs",
         ),
-    ],
+    ] = None,
     technology: Annotated[
         SequencingTechnology,
         typer.Option(
@@ -296,6 +300,17 @@ def run(
             rich_help_panel="tRNA detection",
         ),
     ] = False,
+    skip_taxonomic_assignment: Annotated[
+        bool,
+        typer.Option(
+            "--skip-taxonomic-assignment",
+            help=(
+                "Run only the enabled rRNA and tRNA analyses, without the "
+                "protein-based taxonomic assignment."
+            ),
+            rich_help_panel="Execution",
+        ),
+    ] = False,
     summary_font_size: Annotated[
         float,
         typer.Option(
@@ -358,14 +373,40 @@ def run(
         ),
     ] = "slurm",
 ) -> None:
-    """Run the complete workflow unless Snakemake targets are passed after '--'."""
+    """Run the workflow unless Snakemake targets are passed after '--'."""
+    if skip_taxonomic_assignment and not (rrna or trna):
+        raise typer.BadParameter(
+            "--skip-taxonomic-assignment requires --rrna, --trna, or both.",
+            param_hint="--skip-taxonomic-assignment",
+        )
     if host_taxon is not None and not rrna:
         raise typer.BadParameter(
             "--host-taxon requires --rrna.",
             param_hint="--host-taxon",
         )
+    if database is None and (not skip_taxonomic_assignment or rrna):
+        raise typer.BadParameter(
+            "--database is required for taxonomic assignment and rRNA analysis.",
+            param_hint="--database",
+        )
+    if not skip_taxonomic_assignment and not long_reads:
+        raise typer.BadParameter(
+            "--long-reads is required unless --skip-taxonomic-assignment is used.",
+            param_hint="--long-reads",
+        )
+    if (
+        database is not None
+        and not skip_taxonomic_assignment
+        and not (database / DIAMOND_DATABASE_FILENAME).is_file()
+    ):
+        raise typer.BadParameter(
+            f"{DIAMOND_DATABASE_FILENAME} not found in {database}. Build it with "
+            f"'petra build-db --output {database}'.",
+            param_hint="--database",
+        )
 
     if rrna:
+        assert database is not None
         rna_database_filenames = (
             COVARIANCE_MODEL_FILENAME,
             CLAN_INFO_FILENAME,
@@ -385,18 +426,22 @@ def run(
                 "--skip-diamond-db'.",
                 param_hint="--database",
             )
-
     try:
         # taxonkit resolves the host phylum, so PATH is checked first to report a
         # missing tool as such instead of as a resolution failure.
-        _require_executables(rrna=rrna, trna=trna)
+        _require_executables(
+            rrna=rrna,
+            trna=trna,
+            skip_taxonomic_assignment=skip_taxonomic_assignment,
+        )
         host_phylum = (
             resolve_host_phylum(host_taxon) if host_taxon is not None else None
         )
+        database_path = database if database is not None else Path()
         workflow_config = {
             "assembly": assembly,
-            "diamond_db": database / DIAMOND_DATABASE_FILENAME,
-            "long_reads": long_reads,
+            "diamond_db": database_path / DIAMOND_DATABASE_FILENAME,
+            "long_reads": long_reads or [],
             "sequencing_technology": technology,
             "no_bam_cleaning": no_bam_cleaning,
             "max_low_complexity": max_low_complexity,
@@ -410,13 +455,14 @@ def run(
             ],
             "rrna": rrna,
             "trna": trna,
+            "skip_taxonomic_assignment": skip_taxonomic_assignment,
             "rrna_chunks": _RRNA_CHUNKS,
             "rrna_min_alignment_length": rrna_min_alignment_length,
             "host_phylum": host_phylum,
-            "covariance_model": database / COVARIANCE_MODEL_FILENAME,
-            "clan_info": database / CLAN_INFO_FILENAME,
-            "ssu_database": database / SSU_DATABASE_FILENAME,
-            "lsu_database": database / LSU_DATABASE_FILENAME,
+            "covariance_model": database_path / COVARIANCE_MODEL_FILENAME,
+            "clan_info": database_path / CLAN_INFO_FILENAME,
+            "ssu_database": database_path / SSU_DATABASE_FILENAME,
+            "lsu_database": database_path / LSU_DATABASE_FILENAME,
         }
         exit_code = launch_workflow(
             distribution_name="petra",

@@ -7,15 +7,19 @@ include: "rules/coverage.smk"
 include: "rules/qc.smk"
 
 
-_ALL_TARGETS = [
-    "predictions.final.tsv",
-    "predictions.summary.png",
-    "predictions.eukaryota.fasta",
-    "predictions.bacteria.fasta",
-    "predictions.viruses.fasta",
-    "predictions.archaea.fasta",
-    "predictions.unassigned.fasta",
-]
+_ALL_TARGETS = []
+if not config["skip_taxonomic_assignment"]:
+    _ALL_TARGETS.extend(
+        [
+            "predictions.final.tsv",
+            "predictions.summary.png",
+            "predictions.eukaryota.fasta",
+            "predictions.bacteria.fasta",
+            "predictions.viruses.fasta",
+            "predictions.archaea.fasta",
+            "predictions.unassigned.fasta",
+        ]
+    )
 if config["rrna"]:
     _ALL_TARGETS.extend(["rna/predictions.rrna.gff", "rna/predictions.rrna.tsv"])
 if config["trna"]:
