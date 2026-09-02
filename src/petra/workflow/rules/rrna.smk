@@ -165,6 +165,6 @@ rule summarize_rrna_hits:
     benchmark:
         "benchmarks/summarize_rrna_hits.tsv"
     params:
-        host_taxon=config["host_taxon"],
+        host_phylum=config["host_phylum"],
     script:
         "../scripts/summarize_rrna_hits.py"

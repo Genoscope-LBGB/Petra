@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import shutil
-from importlib.metadata import PackageNotFoundError, version
 from enum import Enum
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated
 
@@ -23,7 +23,7 @@ from .database import (
     build_rna_databases,
 )
 from .launcher import LauncherError, launch_workflow, profile_summaries
-from .taxonomy import HostTaxonError, resolve_host_taxon
+from .taxonomy import HostTaxonError, resolve_host_phylum
 
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
 _RUN_CONTEXT = {**_HELP_CONTEXT, "allow_extra_args": True}
@@ -72,9 +72,7 @@ def _require_executables(*, rrna: bool, trna: bool) -> None:
 
 def _validate_alpha(value: float) -> float:
     if value <= 0:
-        raise typer.BadParameter(
-            "The alpha-majority threshold must be greater than 0."
-        )
+        raise typer.BadParameter("The alpha-majority threshold must be greater than 0.")
     return value
 
 
@@ -284,8 +282,8 @@ def run(
         typer.Option(
             "--host-taxon",
             help=(
-                "Expected host taxon, as an NCBI scientific name or TaxID. rRNA "
-                "hits whose lineage does not contain it are flagged non_host."
+                "Expected host taxon, as an NCBI scientific name or TaxID. PETRA "
+                "resolves its phylum and flags rRNA hits outside that phylum."
             ),
             rich_help_panel="rRNA detection",
         ),
@@ -389,11 +387,11 @@ def run(
             )
 
     try:
-        # taxonkit resolves the host taxon, so PATH is checked first to report a
+        # taxonkit resolves the host phylum, so PATH is checked first to report a
         # missing tool as such instead of as a resolution failure.
         _require_executables(rrna=rrna, trna=trna)
-        canonical_host_taxon = (
-            resolve_host_taxon(host_taxon) if host_taxon is not None else None
+        host_phylum = (
+            resolve_host_phylum(host_taxon) if host_taxon is not None else None
         )
         workflow_config = {
             "assembly": assembly,
@@ -414,7 +412,7 @@ def run(
             "trna": trna,
             "rrna_chunks": _RRNA_CHUNKS,
             "rrna_min_alignment_length": rrna_min_alignment_length,
-            "host_taxon": canonical_host_taxon,
+            "host_phylum": host_phylum,
             "covariance_model": database / COVARIANCE_MODEL_FILENAME,
             "clan_info": database / CLAN_INFO_FILENAME,
             "ssu_database": database / SSU_DATABASE_FILENAME,

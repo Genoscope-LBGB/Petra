@@ -32,24 +32,18 @@ _LINEAGE = 13
 _FIELDS = 14
 
 
-def _non_host(ranks: list[str], host_taxon: str | None) -> str:
-    """Flag a hit whose lineage does not carry the host taxon.
-
-    The comparison is a whole-field match, so it happens at the rank the host
-    taxon itself sits at. A hit resolved only above that rank carries 'N/A'
-    there and is reported as non-host, which over-calls contamination rather
-    than hiding it; the lineage stays in the row so it can be discounted.
-    """
-    if host_taxon is None:
+def _non_host(ranks: list[str], host_phylum: str | None) -> str:
+    """Flag a hit whose lineage does not carry the host phylum."""
+    if host_phylum is None:
         return _NO_HOST
-    return _HOST if host_taxon in ranks else _NON_HOST
+    return _HOST if host_phylum in ranks else _NON_HOST
 
 
 def summarize_rrna_hits(
     lineages: Path,
     destination: Path,
     *,
-    host_taxon: str | None,
+    host_phylum: str | None,
 ) -> None:
     rows: list[tuple[tuple[str, int, int, str], list[str]]] = []
     non_host_count = 0
@@ -78,7 +72,7 @@ def summarize_rrna_hits(
                     f"Invalid gene coordinates at line {line_number} of {lineages}."
                 ) from error
 
-            non_host = _non_host(ranks, host_taxon)
+            non_host = _non_host(ranks, host_phylum)
             if non_host == _NON_HOST:
                 non_host_count += 1
             rows.append(
@@ -100,26 +94,29 @@ def summarize_rrna_hits(
 
     if not rows:
         print("No SSU or LSU gene received a BLAST hit; wrote the header only.")
-    elif host_taxon is None:
+    elif host_phylum is None:
         print(f"Reported {len(rows)} classified rRNA genes, no host taxon given.")
     else:
         print(
             f"Reported {len(rows)} classified rRNA genes, {non_host_count} of them "
-            f"outside {host_taxon}."
+            f"outside the host phylum {host_phylum}."
         )
 
 
 if "snakemake" in globals():
     workflow = globals()["snakemake"]
     log_path = Path(workflow.log[0])
-    with log_path.open("w", encoding="utf-8") as log_handle:
-        with redirect_stdout(log_handle), redirect_stderr(log_handle):
-            try:
-                summarize_rrna_hits(
-                    Path(workflow.input.lineages),
-                    Path(workflow.output.taxonomy),
-                    host_taxon=workflow.params.host_taxon,
-                )
-            except Exception:
-                traceback.print_exc()
-                raise
+    with (
+        log_path.open("w", encoding="utf-8") as log_handle,
+        redirect_stdout(log_handle),
+        redirect_stderr(log_handle),
+    ):
+        try:
+            summarize_rrna_hits(
+                Path(workflow.input.lineages),
+                Path(workflow.output.taxonomy),
+                host_phylum=workflow.params.host_phylum,
+            )
+        except Exception:
+            traceback.print_exc()
+            raise

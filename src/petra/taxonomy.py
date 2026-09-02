@@ -2,77 +2,58 @@ from __future__ import annotations
 
 import subprocess
 
-LINEAGE_RANKS = (
-    "domain",
-    "kingdom",
-    "phylum",
-    "subphylum",
-    "superclass",
-    "class",
-    "superorder",
-    "order",
-    "suborder",
-    "family",
-    "subfamily",
-    "genus",
-    "subgenus",
-    "species",
-    "subspecies",
-)
-
-# Ranks reformat2 can place in a lineage column of LINEAGE_RANKS: the domain
-# column accepts these three spellings, every other column its own rank.
-_DOMAIN_RANKS = ("domain", "acellular root", "superkingdom")
-_REPORTED_RANKS = frozenset(LINEAGE_RANKS) | frozenset(_DOMAIN_RANKS)
+_MISSING_PHYLUM = "N/A"
+_PHYLUM_ARGUMENTS = [
+    "reformat2",
+    "--taxid-field",
+    "1",
+    "--format",
+    "{phylum}",
+    "--miss-rank-repl",
+    _MISSING_PHYLUM,
+    "--miss-taxid-repl",
+    _MISSING_PHYLUM,
+]
 
 
 class HostTaxonError(RuntimeError):
     """An expected host-taxon resolution failure suitable for CLI display."""
 
 
-def resolve_host_taxon(
+def resolve_host_phylum(
     value: str,
     *,
     taxonkit_executable: str = "taxonkit",
 ) -> str:
-    """Resolve a user-facing taxon identifier to its canonical scientific name.
+    """Resolve a user-facing host identifier to its NCBI phylum name.
 
-    Every taxonkit invocation reads the whole NCBI taxonomy dump, which takes
-    tens of seconds on a shared filesystem, so a TaxID costs one call and a
-    name two.
+    A TaxID costs one taxonkit call; a scientific name costs one additional
+    call to resolve the name to a TaxID.
     """
     query = value.strip()
     taxid = query if query.isdigit() else _resolve_name(query, taxonkit_executable)
 
     output = _run_taxonkit(
         taxonkit_executable,
-        ["lineage", "--no-lineage", "--show-name", "--show-rank"],
+        _PHYLUM_ARGUMENTS,
         input_text=f"{taxid}\n",
     )
     lines = output.splitlines()
     if len(lines) != 1:
         raise HostTaxonError(
-            "taxonkit lineage returned an unexpected number of records for "
+            "taxonkit reformat2 returned an unexpected number of records for "
             f"TaxID {taxid}."
         )
     fields = lines[0].split("\t")
-    if len(fields) != 3 or fields[0] != taxid or not fields[1]:
+    if len(fields) != 2 or fields[0] != taxid:
         raise HostTaxonError(
-            "taxonkit lineage returned an unexpected output shape for TaxID "
-            f"{taxid}; expected TaxID, scientific name and rank."
+            "taxonkit reformat2 returned an unexpected output shape for TaxID "
+            f"{taxid}; expected TaxID and phylum."
         )
-    canonical_name, rank = fields[1], fields[2]
-
-    # non_host compares whole lineage fields, and a lineage carries exactly the
-    # ranks of LINEAGE_RANKS. A taxon at any other rank, a tribe or an unranked
-    # clade, appears in no field and would make every hit look non-host.
-    if rank not in _REPORTED_RANKS:
-        ranks = ", ".join(LINEAGE_RANKS)
-        raise HostTaxonError(
-            f"{canonical_name} (TaxID {taxid}) is a {rank}, a rank PETRA does "
-            f"not report. Choose a taxon at one of these ranks: {ranks}."
-        )
-    return canonical_name
+    phylum = fields[1].strip()
+    if not phylum or phylum == _MISSING_PHYLUM:
+        raise HostTaxonError(f"TaxID {taxid} has no phylum in the NCBI taxonomy.")
+    return phylum
 
 
 def _resolve_name(value: str, taxonkit_executable: str) -> str:
