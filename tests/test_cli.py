@@ -190,9 +190,10 @@ class RunCliTest(unittest.TestCase):
         workflow_config = launch.call_args.kwargs["workflow_config"]
         self.assertIs(workflow_config["rrna"], True)
         self.assertIs(workflow_config["trna"], False)
-        self.assertEqual(workflow_config["rrna_chunks"], 16)
+        self.assertEqual(workflow_config["rrna_chunks"], 4)
         self.assertEqual(workflow_config["rrna_min_alignment_length"], 200)
         self.assertIsNone(workflow_config["host_phylum"])
+        self.assertIs(workflow_config["skip_taxonomic_assignment"], False)
         self.assertEqual(
             workflow_config["covariance_model"],
             self.database / "petra.rrna.cm",
@@ -209,6 +210,90 @@ class RunCliTest(unittest.TestCase):
             workflow_config["lsu_database"],
             self.database / "petra.lsu.fasta",
         )
+
+    def test_skips_taxonomic_assignment_for_rrna_without_reads_or_diamond(self) -> None:
+        (self.database / "petra.dmnd").unlink()
+
+        def which_with_only_rrna_tools(executable: str) -> str | None:
+            return (
+                f"/usr/bin/{executable}"
+                if executable in {"cmscan", "blastn", "taxonkit"}
+                else None
+            )
+
+        with (
+            patch("petra.cli.shutil.which", side_effect=which_with_only_rrna_tools),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--database",
+                    str(self.database),
+                    "--rrna",
+                    "--skip-taxonomic-assignment",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertIs(workflow_config["skip_taxonomic_assignment"], True)
+        self.assertIs(workflow_config["rrna"], True)
+        self.assertIs(workflow_config["trna"], False)
+        self.assertEqual(workflow_config["long_reads"], [])
+
+    def test_skips_taxonomic_assignment_for_trna_without_reads_or_database(
+        self,
+    ) -> None:
+        def which_with_only_trna_tools(executable: str) -> str | None:
+            return f"/usr/bin/{executable}" if executable == "tRNAscan-SE" else None
+
+        with (
+            patch("petra.cli.shutil.which", side_effect=which_with_only_trna_tools),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--trna",
+                    "--skip-taxonomic-assignment",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertIs(workflow_config["skip_taxonomic_assignment"], True)
+        self.assertIs(workflow_config["rrna"], False)
+        self.assertIs(workflow_config["trna"], True)
+        self.assertEqual(workflow_config["long_reads"], [])
+
+    def test_rejects_skip_taxonomic_assignment_without_rna_analysis(self) -> None:
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--skip-taxonomic-assignment",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn(
+            "--skip-taxonomic-assignment requires --rrna, --trna, or both.",
+            _flatten(result.output),
+        )
+        launch.assert_not_called()
 
     def test_rejects_rrna_when_an_rna_database_file_is_missing(self) -> None:
         (self.database / "petra.rrna.clanin").unlink()

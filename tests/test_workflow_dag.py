@@ -58,7 +58,25 @@ class WorkflowDagTest(unittest.TestCase):
         self.assertIn("rna/predictions.trna.tsv", trna)
         self.assertIn("rna/predictions.trna.stats", trna)
 
-    def _dry_run(self, *, rrna: bool, trna: bool) -> str:
+        rna_only = self._dry_run(
+            rrna=True,
+            trna=True,
+            skip_taxonomic_assignment=True,
+        )
+        self._assert_job_absent(rna_only, "split_assembly_by_domain")
+        self._assert_job_absent(rna_only, "diamond")
+        self._assert_job_absent(rna_only, "plot_summary_graph")
+        self._assert_job_count(rna_only, "cmscan", 16)
+        self._assert_job_count(rna_only, "summarize_rrna_hits", 1)
+        self._assert_job_count(rna_only, "trnascan", 1)
+
+    def _dry_run(
+        self,
+        *,
+        rrna: bool,
+        trna: bool,
+        skip_taxonomic_assignment: bool = False,
+    ) -> str:
         config = {
             "assembly": str(self.assembly),
             "diamond_db": str(self.diamond_database),
@@ -74,6 +92,7 @@ class WorkflowDagTest(unittest.TestCase):
             "summary_disabled_panels": [],
             "rrna": rrna,
             "trna": trna,
+            "skip_taxonomic_assignment": skip_taxonomic_assignment,
             "rrna_chunks": 16,
             "rrna_min_alignment_length": 200,
             "host_phylum": None,
@@ -82,7 +101,9 @@ class WorkflowDagTest(unittest.TestCase):
             "ssu_database": str(self.ssu_database),
             "lsu_database": str(self.lsu_database),
         }
-        config_path = self.directory / f"config-{rrna}-{trna}.yaml"
+        config_path = self.directory / (
+            f"config-{rrna}-{trna}-{skip_taxonomic_assignment}.yaml"
+        )
         config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
         process = subprocess.run(
             [
