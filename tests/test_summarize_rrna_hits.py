@@ -8,7 +8,7 @@ SCRIPTS_DIRECTORY = (
 )
 sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
-from summarize_rrna_hits import summarize_rrna_hits  # noqa: E402
+from summarize_rrna_hits import summarize_rrna_hits
 
 _HEADER = (
     "sequence_name\tgene_start\tgene_end\tstrand\trfam_accession\tsubunit\t"
@@ -58,8 +58,8 @@ class SummarizeRnaHitsTest(unittest.TestCase):
         self.lineages = self.directory / "predictions.rrna.lineages.tsv"
         self.destination = self.directory / "predictions.rrna.tsv"
 
-    def _summarize(self, host_taxon: str | None) -> list[str]:
-        summarize_rrna_hits(self.lineages, self.destination, host_taxon=host_taxon)
+    def _summarize(self, host_phylum: str | None) -> list[str]:
+        summarize_rrna_hits(self.lineages, self.destination, host_phylum=host_phylum)
         return self.destination.read_text(encoding="utf-8").splitlines()
 
     def test_reports_a_pipe_joined_lineage_without_a_host(self) -> None:
@@ -91,7 +91,7 @@ class SummarizeRnaHitsTest(unittest.TestCase):
             ],
         )
 
-    def test_flags_a_hit_whose_lineage_lacks_the_host_taxon(self) -> None:
+    def test_flags_a_hit_whose_lineage_lacks_the_host_phylum(self) -> None:
         self.lineages.write_text(
             _row(gene_id="rrna_1")
             + _row(
@@ -108,22 +108,22 @@ class SummarizeRnaHitsTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        lines = self._summarize("Actinopteri")
+        lines = self._summarize("Chordata")
 
         self.assertEqual([line.split("\t")[-1] for line in lines[1:]], ["no", "yes"])
 
-    def test_reports_a_hit_resolved_above_the_host_rank_as_non_host(self) -> None:
+    def test_reports_a_hit_unresolved_at_phylum_as_non_host(self) -> None:
         self.lineages.write_text(
             _row(
                 lineage=(
-                    "Eukaryota;Metazoa;Chordata;N/A;N/A;N/A;N/A;N/A;N/A;N/A;N/A;"
+                    "Eukaryota;Metazoa;N/A;N/A;N/A;N/A;N/A;N/A;N/A;N/A;N/A;"
                     "N/A;N/A;N/A;N/A"
                 )
             ),
             encoding="utf-8",
         )
 
-        lines = self._summarize("Actinopteri")
+        lines = self._summarize("Chordata")
 
         self.assertEqual(lines[1].split("\t")[-1], "yes")
 
@@ -145,7 +145,7 @@ class SummarizeRnaHitsTest(unittest.TestCase):
     def test_writes_the_header_alone_when_nothing_was_classified(self) -> None:
         self.lineages.write_text("", encoding="utf-8")
 
-        self.assertEqual(self._summarize("Actinopteri"), [_HEADER])
+        self.assertEqual(self._summarize("Chordata"), [_HEADER])
 
     def test_rejects_a_lineage_of_unexpected_depth(self) -> None:
         self.lineages.write_text(

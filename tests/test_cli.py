@@ -96,9 +96,7 @@ class RunCliTest(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0, result.output)
         workflow_config = launch.call_args.kwargs["workflow_config"]
-        self.assertEqual(
-            workflow_config["diamond_db"], self.database / "petra.dmnd"
-        )
+        self.assertEqual(workflow_config["diamond_db"], self.database / "petra.dmnd")
         self.assertEqual(
             workflow_config["sequencing_technology"], SequencingTechnology.PACBIO
         )
@@ -194,7 +192,7 @@ class RunCliTest(unittest.TestCase):
         self.assertIs(workflow_config["trna"], False)
         self.assertEqual(workflow_config["rrna_chunks"], 16)
         self.assertEqual(workflow_config["rrna_min_alignment_length"], 200)
-        self.assertIsNone(workflow_config["host_taxon"])
+        self.assertIsNone(workflow_config["host_phylum"])
         self.assertEqual(
             workflow_config["covariance_model"],
             self.database / "petra.rrna.cm",
@@ -245,11 +243,11 @@ class RunCliTest(unittest.TestCase):
         self.assertIn("--host-taxon requires --rrna.", _flatten(result.output))
         launch.assert_not_called()
 
-    def test_resolves_host_taxon_into_workflow_config(self) -> None:
+    def test_resolves_host_taxon_phylum_into_workflow_config(self) -> None:
         with (
             patch(
-                "petra.cli.resolve_host_taxon",
-                return_value="Homo sapiens",
+                "petra.cli.resolve_host_phylum",
+                return_value="Chordata",
             ) as resolve,
             patch("petra.cli._require_executables"),
             patch("petra.cli.launch_workflow", return_value=0) as launch,
@@ -262,14 +260,14 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         resolve.assert_called_once_with("9606")
         self.assertEqual(
-            launch.call_args.kwargs["workflow_config"]["host_taxon"],
-            "Homo sapiens",
+            launch.call_args.kwargs["workflow_config"]["host_phylum"],
+            "Chordata",
         )
 
     def test_reports_host_taxon_resolution_failure(self) -> None:
         with (
             patch(
-                "petra.cli.resolve_host_taxon",
+                "petra.cli.resolve_host_phylum",
                 side_effect=HostTaxonError("TaxID 123 is not usable."),
             ),
             patch("petra.cli._require_executables"),
@@ -304,9 +302,7 @@ class RunCliTest(unittest.TestCase):
     def test_rrna_requires_cmscan_and_blastn(self) -> None:
         def which_without_rrna_tools(executable: str) -> str | None:
             return (
-                None
-                if executable in {"cmscan", "blastn"}
-                else f"/usr/bin/{executable}"
+                None if executable in {"cmscan", "blastn"} else f"/usr/bin/{executable}"
             )
 
         with (

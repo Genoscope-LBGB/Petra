@@ -4,36 +4,47 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from petra.taxonomy import HostTaxonError, LINEAGE_RANKS, resolve_host_taxon
+from petra.taxonomy import HostTaxonError, resolve_host_phylum
 
-_LINEAGE_ARGUMENTS = ["lineage", "--no-lineage", "--show-name", "--show-rank"]
+_PHYLUM_ARGUMENTS = [
+    "reformat2",
+    "--taxid-field",
+    "1",
+    "--format",
+    "{phylum}",
+    "--miss-rank-repl",
+    "N/A",
+    "--miss-taxid-repl",
+    "N/A",
+]
 
 
-class ResolveHostTaxonTest(unittest.TestCase):
+class ResolveHostPhylumTest(unittest.TestCase):
     def test_resolves_a_taxid_with_a_single_taxonkit_call(self) -> None:
         with patch(
             "petra.taxonomy.subprocess.run",
-            side_effect=[_process("9606\tHomo sapiens\tspecies\n")],
+            side_effect=[_process("9606\tChordata\n")],
         ) as run:
-            result = resolve_host_taxon("9606")
+            result = resolve_host_phylum("9606")
 
-        self.assertEqual(result, "Homo sapiens")
+        self.assertEqual(result, "Chordata")
         self.assertEqual(run.call_count, 1)
         self.assertEqual(
-            run.call_args_list[0].args[0], ["taxonkit", *_LINEAGE_ARGUMENTS]
+            run.call_args_list[0].args[0], ["taxonkit", *_PHYLUM_ARGUMENTS]
         )
+        self.assertEqual(run.call_args_list[0].kwargs["input"], "9606\n")
 
     def test_resolves_a_name_with_two_taxonkit_calls(self) -> None:
         with patch(
             "petra.taxonomy.subprocess.run",
             side_effect=[
                 _process("human\t9606\n"),
-                _process("9606\tHomo sapiens\tspecies\n"),
+                _process("9606\tChordata\n"),
             ],
         ) as run:
-            result = resolve_host_taxon("human", taxonkit_executable="custom-taxonkit")
+            result = resolve_host_phylum("human", taxonkit_executable="custom-taxonkit")
 
-        self.assertEqual(result, "Homo sapiens")
+        self.assertEqual(result, "Chordata")
         self.assertEqual(run.call_count, 2)
         self.assertEqual(
             run.call_args_list[0].args[0],
@@ -42,62 +53,71 @@ class ResolveHostTaxonTest(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].kwargs["input"], "human\n")
         self.assertEqual(
             run.call_args_list[1].args[0],
-            ["custom-taxonkit", *_LINEAGE_ARGUMENTS],
+            ["custom-taxonkit", *_PHYLUM_ARGUMENTS],
         )
 
-    def test_accepts_a_domain_however_ncbi_spells_its_rank(self) -> None:
-        for rank in ("domain", "superkingdom", "acellular root"):
-            with self.subTest(rank=rank):
-                with patch(
-                    "petra.taxonomy.subprocess.run",
-                    side_effect=[_process(f"2\tBacteria\t{rank}\n")],
-                ):
-                    self.assertEqual(resolve_host_taxon("2"), "Bacteria")
+    def test_accepts_a_taxid_at_phylum_rank(self) -> None:
+        with patch(
+            "petra.taxonomy.subprocess.run",
+            return_value=_process("7711\tChordata\n"),
+        ):
+            self.assertEqual(resolve_host_phylum("7711"), "Chordata")
+
+    def test_rejects_a_taxon_without_a_phylum(self) -> None:
+        with (
+            patch(
+                "petra.taxonomy.subprocess.run",
+                return_value=_process("2\tN/A\n"),
+            ),
+            self.assertRaisesRegex(
+                HostTaxonError,
+                "TaxID 2 has no phylum in the NCBI taxonomy",
+            ),
+        ):
+            resolve_host_phylum("2")
 
     def test_rejects_an_unknown_name(self) -> None:
-        with patch(
-            "petra.taxonomy.subprocess.run",
-            return_value=_process("unknown\t\n"),
-        ):
-            with self.assertRaisesRegex(
+        with (
+            patch(
+                "petra.taxonomy.subprocess.run",
+                return_value=_process("unknown\t\n"),
+            ),
+            self.assertRaisesRegex(
                 HostTaxonError,
                 "Pass an NCBI TaxID or a scientific name",
-            ):
-                resolve_host_taxon("unknown")
+            ),
+        ):
+            resolve_host_phylum("unknown")
 
     def test_rejects_an_ambiguous_name_and_lists_candidate_taxids(self) -> None:
-        with patch(
-            "petra.taxonomy.subprocess.run",
-            return_value=_process("Drosophila\t7215\nDrosophila\t32281\n"),
+        with (
+            patch(
+                "petra.taxonomy.subprocess.run",
+                return_value=_process("Drosophila\t7215\nDrosophila\t32281\n"),
+            ),
+            self.assertRaises(HostTaxonError) as caught,
         ):
-            with self.assertRaises(HostTaxonError) as caught:
-                resolve_host_taxon("Drosophila")
+            resolve_host_phylum("Drosophila")
 
         self.assertIn("7215", str(caught.exception))
         self.assertIn("32281", str(caught.exception))
         self.assertIn("Pass one of these TaxIDs", str(caught.exception))
 
-    def test_rejects_a_taxon_at_a_rank_petra_does_not_report(self) -> None:
-        with patch(
-            "petra.taxonomy.subprocess.run",
-            side_effect=[_process("1912919\tNasutitermitinae\tsubtribe\n")],
-        ):
-            with self.assertRaises(HostTaxonError) as caught:
-                resolve_host_taxon("1912919")
-
-        self.assertIn("is a subtribe", str(caught.exception))
-        for rank in LINEAGE_RANKS:
-            self.assertIn(rank, str(caught.exception))
-
     def test_reports_a_taxonkit_failure_with_stderr(self) -> None:
-        with patch(
-            "petra.taxonomy.subprocess.run",
-            return_value=_process("", stderr="taxonomy database missing", returncode=1),
+        with (
+            patch(
+                "petra.taxonomy.subprocess.run",
+                return_value=_process(
+                    "", stderr="taxonomy database missing", returncode=1
+                ),
+            ),
+            self.assertRaises(HostTaxonError) as caught,
         ):
-            with self.assertRaises(HostTaxonError) as caught:
-                resolve_host_taxon("9606")
+            resolve_host_phylum("9606")
 
-        self.assertIn("taxonkit lineage failed with exit code 1", str(caught.exception))
+        self.assertIn(
+            "taxonkit reformat2 failed with exit code 1", str(caught.exception)
+        )
         self.assertIn("taxonomy database missing", str(caught.exception))
 
 
