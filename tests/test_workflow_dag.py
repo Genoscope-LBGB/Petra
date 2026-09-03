@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from petra.database import TAXONOMY_DIRECTORY_NAME, TAXONOMY_FILENAMES
 from petra.launcher import workflow_directory
 
 
@@ -24,6 +25,10 @@ class WorkflowDagTest(unittest.TestCase):
         self.clan_info = self.directory / "petra.rrna.clanin"
         self.ssu_database = self.directory / "petra.ssu.fasta"
         self.lsu_database = self.directory / "petra.lsu.fasta"
+        self.taxonomy = self.directory / TAXONOMY_DIRECTORY_NAME
+        self.taxonomy.mkdir()
+        for filename in TAXONOMY_FILENAMES:
+            (self.taxonomy / filename).touch()
         for path in (
             self.assembly,
             self.reads,
@@ -117,6 +122,7 @@ class WorkflowDagTest(unittest.TestCase):
             "clan_info": str(self.clan_info),
             "ssu_database": str(self.ssu_database),
             "lsu_database": str(self.lsu_database),
+            "taxonomy": str(self.taxonomy),
         }
         config_path = self.directory / (
             f"config-{rrna}-{trna}-{skip_taxonomic_assignment}.yaml"
