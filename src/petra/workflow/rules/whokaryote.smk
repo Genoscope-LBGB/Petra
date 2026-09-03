@@ -6,6 +6,7 @@ rule whokaryote:
     output:
         predictions=temp("predictions.whokaryote.tsv"),
         tiara_predictions=temp("predictions.tiara.tsv"),
+        noneuk="whokaryote.noneuk.txt",
     log:
         "logs/whokaryote.log",
     benchmark:
@@ -21,7 +22,9 @@ rule whokaryote:
         "cp {params.output_directory:q}/whokaryote_predictions_T.tsv "
         "{output.predictions:q} && "
         "cp {params.output_directory:q}/tiara_pred.txt "
-        "{output.tiara_predictions:q}"
+        "{output.tiara_predictions:q} && "
+        "cp {params.output_directory:q}/prokaryote_contig_headers.txt "
+        "{output.noneuk:q}"
 
 
 rule extract_organelles:

@@ -43,6 +43,7 @@ class WorkflowDagTest(unittest.TestCase):
         self._assert_job_absent(protein_only, "summarize_rrna_hits")
         self._assert_job_absent(protein_only, "trnascan")
         self.assertIn("predictions.organelles.tsv", protein_only)
+        self.assertIn("whokaryote.noneuk.txt", protein_only)
 
         rrna = self._dry_run(rrna=True, trna=False)
         self._assert_job_count(rrna, "split_assembly_by_domain", 1)
