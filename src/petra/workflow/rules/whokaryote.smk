@@ -5,6 +5,7 @@ rule whokaryote:
         gff="predictions.gff",
     output:
         predictions=temp("predictions.whokaryote.tsv"),
+        tiara_predictions=temp("predictions.tiara.tsv"),
     log:
         "logs/whokaryote.log",
     benchmark:
@@ -18,7 +19,23 @@ rule whokaryote:
         "--outdir {params.output_directory:q} --model T --minsize 5000 "
         "--threads {threads} > {log:q} 2>&1 && "
         "cp {params.output_directory:q}/whokaryote_predictions_T.tsv "
-        "{output.predictions:q}"
+        "{output.predictions:q} && "
+        "cp {params.output_directory:q}/tiara_pred.txt "
+        "{output.tiara_predictions:q}"
+
+
+rule extract_organelles:
+    """List sequences that Tiara classified as organelles."""
+    input:
+        predictions="predictions.tiara.tsv",
+    output:
+        organelles="predictions.organelles.tsv",
+    log:
+        "logs/extract_organelles.log",
+    benchmark:
+        "benchmarks/extract_organelles.tsv"
+    script:
+        "../scripts/extract_organelles.py"
 
 
 rule control_taxonomy_with_whokaryote:

@@ -38,9 +38,11 @@ class WorkflowDagTest(unittest.TestCase):
     def test_optional_analyses_only_enter_the_dag_when_enabled(self) -> None:
         protein_only = self._dry_run(rrna=False, trna=False)
         self._assert_job_count(protein_only, "split_assembly_by_domain", 1)
+        self._assert_job_count(protein_only, "extract_organelles", 1)
         self._assert_job_absent(protein_only, "cmscan")
         self._assert_job_absent(protein_only, "summarize_rrna_hits")
         self._assert_job_absent(protein_only, "trnascan")
+        self.assertIn("predictions.organelles.tsv", protein_only)
 
         rrna = self._dry_run(rrna=True, trna=False)
         self._assert_job_count(rrna, "split_assembly_by_domain", 1)
@@ -65,6 +67,7 @@ class WorkflowDagTest(unittest.TestCase):
         )
         self._assert_job_absent(rna_only, "split_assembly_by_domain")
         self._assert_job_absent(rna_only, "diamond")
+        self._assert_job_absent(rna_only, "extract_organelles")
         self._assert_job_absent(rna_only, "plot_summary_graph")
         self._assert_job_count(rna_only, "cmscan", 16)
         self._assert_job_count(rna_only, "summarize_rrna_hits", 1)

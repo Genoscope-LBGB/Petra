@@ -103,6 +103,11 @@ petra run \
   --output run-1
 ```
 
+A full run also writes `predictions.organelles.tsv`, listing each sequence that
+Tiara classified as an organelle and its second-stage type (`mitochondrion`,
+`plastid`, or `unknown`). As with the other Whokaryote results, only sequences
+of at least 5,000 bp are considered.
+
 The run writes `predictions.summary.png`, a summary graph to eyeball the result:
 GC against depth of coverage with point area scaled by sequence length, both
 cumulative-length marginals, the five longest sequences, and the share of

@@ -52,6 +52,9 @@ set-resources:
   whokaryote:
     runtime: 720
     mem_mb: 32000
+  extract_organelles:
+    runtime: 60
+    mem_mb: 10000
   control_taxonomy_with_whokaryote:
     runtime: 60
     mem_mb: 10000
