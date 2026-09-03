@@ -43,6 +43,7 @@ class WorkflowDagTest(unittest.TestCase):
         self._assert_job_absent(protein_only, "summarize_rrna_hits")
         self._assert_job_absent(protein_only, "trnascan")
         self.assertIn("predictions.organelles.tsv", protein_only)
+        self.assertIn("predictions.gene_taxonomy.tsv", protein_only)
         self.assertIn("whokaryote.noneuk.txt", protein_only)
 
         rrna = self._dry_run(rrna=True, trna=False)
@@ -70,6 +71,7 @@ class WorkflowDagTest(unittest.TestCase):
         self._assert_job_absent(rna_only, "diamond")
         self._assert_job_absent(rna_only, "extract_organelles")
         self._assert_job_absent(rna_only, "plot_summary_graph")
+        self.assertNotIn("predictions.gene_taxonomy.tsv", rna_only)
         self._assert_job_count(rna_only, "cmscan", 16)
         self._assert_job_count(rna_only, "summarize_rrna_hits", 1)
         self._assert_job_count(rna_only, "trnascan", 1)

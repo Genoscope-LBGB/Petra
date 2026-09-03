@@ -166,6 +166,30 @@ def _protein_lineage(assignment: ProteinAssignment) -> tuple[str, ...]:
     return tuple(lineage)
 
 
+def _write_gene_taxonomy(
+    destination: Path,
+    sequence_ids: list[str],
+    protein_sequences: dict[str, str],
+    protein_lineages: dict[str, tuple[str, ...]],
+) -> None:
+    assigned_proteins: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+    for protein_id, sequence_id in protein_sequences.items():
+        lineage = protein_lineages.get(protein_id)
+        if lineage is not None:
+            assigned_proteins.setdefault(sequence_id, []).append((protein_id, lineage))
+
+    with destination.open("w", encoding="utf-8") as output_handle:
+        for sequence_id in sequence_ids:
+            output_handle.write(f"{sequence_id}\n")
+            for protein_id, lineage in assigned_proteins.get(sequence_id, []):
+                assigned_lineage = ";".join(
+                    taxon for taxon in lineage if taxon != _MISSING_TAXON
+                )
+                output_handle.write(
+                    f"\t{protein_id}\t{assigned_lineage or _MISSING_TAXON}\n"
+                )
+
+
 def _wilson_lower_bound(successes: int, total: int) -> float:
     """Lower bound of the one-sided Wilson interval for a share of votes.
 
@@ -211,6 +235,7 @@ def assign_taxonomy(
     alignment: Path,
     destination: Path,
     reasons_destination: Path,
+    gene_taxonomy_destination: Path,
     alpha: float = 0.5,
 ) -> None:
     if not 0 < alpha <= 1:
@@ -222,18 +247,26 @@ def assign_taxonomy(
     sequence_ids = list(sequences)
     protein_sequences = _clustered_proteins(proteins, set(sequences))
     protein_assignments = _alignment_assignments(alignment, protein_sequences)
+    protein_lineages = {
+        protein_id: _protein_lineage(assignment)
+        for protein_id, assignment in protein_assignments.items()
+    }
+    _write_gene_taxonomy(
+        gene_taxonomy_destination,
+        sequence_ids,
+        protein_sequences,
+        protein_lineages,
+    )
 
     rank_votes: dict[str, list[Counter[str]]] = {}
     assignment_counts: Counter[str] = Counter()
-    for protein_id, assignment in protein_assignments.items():
+    for protein_id, lineage in protein_lineages.items():
         sequence_id = protein_sequences[protein_id]
         assignment_counts[sequence_id] += 1
         sequence_votes = rank_votes.setdefault(
             sequence_id, [Counter() for _ in TAXONOMIC_RANKS]
         )
-        for votes, taxon in zip(
-            sequence_votes, _protein_lineage(assignment), strict=True
-        ):
+        for votes, taxon in zip(sequence_votes, lineage, strict=True):
             votes[taxon] += 1
 
     assigned_sequences = 0
@@ -303,6 +336,7 @@ if "snakemake" in globals():
                     Path(workflow.input.alignment),
                     Path(workflow.output.taxonomy),
                     Path(workflow.output.reasons),
+                    Path(workflow.output.gene_taxonomy),
                     float(workflow.params.alpha),
                 )
             except Exception:

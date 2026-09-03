@@ -73,6 +73,7 @@ rule assign_taxonomy:
     output:
         taxonomy=temp("predictions.taxonomy.raw.tsv"),
         reasons=temp("predictions.unassigned_reasons.assign_taxonomy.tsv"),
+        gene_taxonomy="predictions.gene_taxonomy.tsv",
     log:
         "logs/assign_taxonomy.log",
     benchmark:

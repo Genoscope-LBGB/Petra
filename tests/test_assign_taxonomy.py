@@ -155,6 +155,34 @@ class AssignTaxonomyTest(unittest.TestCase):
         self.assertEqual(rows[1][_PHYLUM_COLUMN], "N/A")
         self.assertEqual(reasons[1], ["contig", "-"])
 
+    def test_reports_each_aligned_gene_under_its_assembly_sequence(self) -> None:
+        bacteria = self._lineage(domain="Bacteria", phylum="Pseudomonadota")
+        archaea = self._lineage(domain="Archaea")
+        self._assign(
+            {"contig_1": 100, "empty": 100},
+            ["contig_1_1", "contig_1_2", "contig_1_3"],
+            [
+                (
+                    "contig_1_2",
+                    "100",
+                    self._lineage(domain="Bacteria", phylum="Bacillota"),
+                ),
+                ("contig_1_1", "50", archaea),
+                ("contig_1_2", "100", bacteria),
+                ("contig_1_1", "100", bacteria),
+            ],
+        )
+
+        self.assertEqual(
+            self.gene_taxonomy_rows,
+            [
+                ["contig_1"],
+                ["", "contig_1_1", "Bacteria;Pseudomonadota"],
+                ["", "contig_1_2", "Bacteria"],
+                ["empty"],
+            ],
+        )
+
     def test_does_not_report_a_failure_without_votes_for_any_rank(self) -> None:
         _, reasons = self._assign(
             {"missing": 100, "tied": 100},
@@ -167,6 +195,15 @@ class AssignTaxonomyTest(unittest.TestCase):
         )
 
         self.assertEqual(reasons[1:], [["missing", "-"], ["tied", "-"]])
+        self.assertEqual(
+            self.gene_taxonomy_rows,
+            [
+                ["missing"],
+                ["", "missing_1", "N/A"],
+                ["tied"],
+                ["", "tied_1", "N/A"],
+            ],
+        )
 
     def _assign(
         self,
@@ -182,6 +219,7 @@ class AssignTaxonomyTest(unittest.TestCase):
         alignment = directory / "lineages.tsv"
         destination = directory / "taxonomy.tsv"
         reasons = directory / "reasons.tsv"
+        gene_taxonomy = directory / "gene-taxonomy.tsv"
 
         assembly.write_text(
             "".join(
@@ -203,7 +241,18 @@ class AssignTaxonomyTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        assign_taxonomy(assembly, proteins, alignment, destination, reasons, **options)
+        assign_taxonomy(
+            assembly,
+            proteins,
+            alignment,
+            destination,
+            reasons,
+            gene_taxonomy,
+            **options,
+        )
+        self.gene_taxonomy_rows = [
+            line.split("\t") for line in gene_taxonomy.read_text().splitlines()
+        ]
 
         return (
             [line.split("\t") for line in destination.read_text().splitlines()],

@@ -116,6 +116,22 @@ listing each sequence that Tiara classified as an organelle and its second-stage
 type (`mitochondrion`, `plastid`, or `unknown`). Only sequences of at least
 5,000 bp are considered for either output.
 
+The protein-taxonomy workflow also writes `predictions.gene_taxonomy.tsv`.
+Each assembly sequence is an unindented header followed by one tab-indented row
+per aligned predicted-gene cluster, containing the representative gene
+identifier and the lineage supported by its highest-scoring retained hit or
+hits. The lineage is semicolon-separated, and missing ranks are omitted;
+a completely unresolved best hit is reported as `N/A`. Sequences
+without an aligned gene are retained as headers with no rows:
+
+```text
+contig_1
+	contig_1_1	Eukaryota;Metazoa;Chordata
+	contig_1_2	Bacteria;Pseudomonadota
+contig_2
+	contig_2_1	Viruses
+```
+
 The run writes `predictions.summary.png`, a summary graph to eyeball the result:
 GC against depth of coverage with point area scaled by sequence length, both
 cumulative-length marginals, the five longest sequences, and the share of

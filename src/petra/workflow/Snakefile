@@ -12,6 +12,7 @@ if not config["skip_taxonomic_assignment"]:
     _ALL_TARGETS.extend(
         [
             "predictions.final.tsv",
+            "predictions.gene_taxonomy.tsv",
             "predictions.organelles.tsv",
             "whokaryote.noneuk.txt",
             "predictions.summary.png",
