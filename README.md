@@ -110,6 +110,17 @@ petra run \
   --output run-1
 ```
 
+# Output files
+
+The assembly sequences split by final PETRA domain are written under the
+output directory's `decontaminated/` subdirectory:
+
+- `decontaminated/predictions.eukaryota.fasta`
+- `decontaminated/predictions.bacteria.fasta`
+- `decontaminated/predictions.viruses.fasta`
+- `decontaminated/predictions.archaea.fasta`
+- `decontaminated/predictions.unassigned.fasta`
+
 A full run also writes `whokaryote.noneuk.txt`, with one Whokaryote-classified
 non-eukaryotic contig identifier per line, and `predictions.organelles.tsv`,
 listing each sequence that Tiara classified as an organelle and its second-stage

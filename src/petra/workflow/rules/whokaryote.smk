@@ -79,11 +79,11 @@ rule split_assembly_by_domain:
         assembly=config["assembly"],
         taxonomy="predictions.final.tsv",
     output:
-        eukaryota="predictions.eukaryota.fasta",
-        bacteria="predictions.bacteria.fasta",
-        viruses="predictions.viruses.fasta",
-        archaea="predictions.archaea.fasta",
-        unassigned="predictions.unassigned.fasta",
+        eukaryota="decontaminated/predictions.eukaryota.fasta",
+        bacteria="decontaminated/predictions.bacteria.fasta",
+        viruses="decontaminated/predictions.viruses.fasta",
+        archaea="decontaminated/predictions.archaea.fasta",
+        unassigned="decontaminated/predictions.unassigned.fasta",
     log:
         "logs/split_assembly_by_domain.log",
     benchmark:

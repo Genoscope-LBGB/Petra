@@ -16,11 +16,11 @@ if not config["skip_taxonomic_assignment"]:
             "predictions.organelles.tsv",
             "whokaryote.noneuk.txt",
             "predictions.summary.png",
-            "predictions.eukaryota.fasta",
-            "predictions.bacteria.fasta",
-            "predictions.viruses.fasta",
-            "predictions.archaea.fasta",
-            "predictions.unassigned.fasta",
+            "decontaminated/predictions.eukaryota.fasta",
+            "decontaminated/predictions.bacteria.fasta",
+            "decontaminated/predictions.viruses.fasta",
+            "decontaminated/predictions.archaea.fasta",
+            "decontaminated/predictions.unassigned.fasta",
         ]
     )
 if config["rrna"]:
