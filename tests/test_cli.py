@@ -16,6 +16,9 @@ class RunCliTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        self.environment = patch.dict("os.environ", {"PETRA_DB_DIR": ""})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
         self.directory = Path(self.temporary.name)
         self.database = self.directory / "database"
         self.database.mkdir()
@@ -100,6 +103,74 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual(
             workflow_config["sequencing_technology"], SequencingTechnology.PACBIO
         )
+
+    def test_uses_database_directory_from_environment(self) -> None:
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--long-reads",
+                    str(self.reads),
+                ],
+                env={"PETRA_DB_DIR": str(self.database)},
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertEqual(workflow_config["diamond_db"], self.database / "petra.dmnd")
+
+    def test_database_option_overrides_environment(self) -> None:
+        environment_database = self.directory / "environment-database"
+        environment_database.mkdir()
+        (environment_database / "petra.dmnd").touch()
+
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                self.run_arguments(),
+                env={"PETRA_DB_DIR": str(environment_database)},
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertEqual(workflow_config["diamond_db"], self.database / "petra.dmnd")
+
+    def test_checks_database_files_for_environment_directory(self) -> None:
+        empty = self.directory / "empty-environment-database"
+        empty.mkdir()
+
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--long-reads",
+                    str(self.reads),
+                ],
+                env={"PETRA_DB_DIR": str(empty)},
+            )
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn(
+            f"petra.dmnd not found in {empty}. Build it with 'petra build-db "
+            f"--output {empty}'.",
+            _flatten(result.output),
+        )
+        launch.assert_not_called()
 
     def test_rejects_a_directory_without_the_diamond_database(self) -> None:
         empty = self.directory / "empty"

@@ -67,6 +67,13 @@ petra run \
   --output run-1
 ```
 
+To avoid passing the database on each run:
+
+```console
+export PETRA_DB_DIR=/path/to/database
+petra run --assembly assembly.fasta --long-reads reads.fastq.gz --output run-1
+```
+
 #### Optional rRNA and tRNA analyses
 
 Add `--rrna` to detect rRNA genes with `cmscan` and classify SSU and LSU genes

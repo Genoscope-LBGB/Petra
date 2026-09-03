@@ -164,8 +164,11 @@ def run(
             "-d",
             help=(
                 "Database directory produced by 'petra build-db'. Required for "
-                "taxonomic assignment and rRNA analysis."
+                "taxonomic assignment and rRNA analysis. Can also be set with "
+                "PETRA_DB_DIR; --database takes precedence."
             ),
+            envvar="PETRA_DB_DIR",
+            show_envvar=True,
             exists=True,
             file_okay=False,
             readable=True,
