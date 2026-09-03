@@ -43,14 +43,18 @@ rule replace_taxids_with_lineages:
         alignment="predictions.diamond.filtered.tsv",
     output:
         alignment=temp("predictions.diamond.lineages.tsv"),
+    params:
+        taxonomy=config["taxonomy"],
     log:
         "logs/replace_taxids_with_lineages.log",
     benchmark:
         "benchmarks/replace_taxids_with_lineages.tsv"
     shell:
-        "(taxonkit --threads {threads} lca --taxids-field 5 --separator ';' "
+        "(taxonkit --data-dir {params.taxonomy:q} --threads {threads} "
+        "lca --taxids-field 5 --separator ';' "
         "{input.alignment:q} "
-        "| taxonkit --threads {threads} reformat2 --taxid-field 6 "
+        "| taxonkit --data-dir {params.taxonomy:q} --threads {threads} "
+        "reformat2 --taxid-field 6 "
         "--format '{{domain|acellular root|superkingdom}};{{kingdom}};"
         "{{phylum}};{{subphylum}};{{superclass}};{{class}};{{superorder}};"
         "{{order}};{{suborder}};{{family}};{{subfamily}};{{genus}};"

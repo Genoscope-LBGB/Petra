@@ -138,13 +138,16 @@ rule replace_rrna_taxids_with_lineages:
         hits="rna/predictions.rrna.hits.tsv",
     output:
         lineages=temp("rna/predictions.rrna.lineages.tsv"),
+    params:
+        taxonomy=config["taxonomy"],
     log:
         "logs/replace_rrna_taxids_with_lineages.log",
     benchmark:
         "benchmarks/replace_rrna_taxids_with_lineages.tsv"
     shell:
         "if [ -s {input.hits:q} ]; then "
-        "taxonkit --threads {threads} reformat2 --taxid-field 13 "
+        "taxonkit --data-dir {params.taxonomy:q} --threads {threads} "
+        "reformat2 --taxid-field 13 "
         "--format '{{domain|acellular root|superkingdom}};{{kingdom}};"
         "{{phylum}};{{subphylum}};{{superclass}};{{class}};{{superorder}};"
         "{{order}};{{suborder}};{{family}};{{subfamily}};{{genus}};"

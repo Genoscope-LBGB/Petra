@@ -19,11 +19,13 @@ petra build-db \
   --output database
 ```
 
-The command requires `diamond` on `PATH` and creates `database/petra.dmnd`. If
-an input is omitted, it downloads NCBI NR or the full NCBI protein taxon map
-into the output directory, logs the source and destination, and removes the
-download after the build. It fails rather than replacing an existing download
-or `petra.dmnd`.
+The command requires `diamond` on `PATH` and creates `database/petra.dmnd`. It
+also downloads the current NCBI taxonomy dump and keeps the TaxonKit files under
+`database/taxonomy/`. Pass `--taxdump taxdump.tar.gz` to use a local taxonomy
+snapshot instead. If the protein FASTA or taxon map is omitted, PETRA downloads
+NCBI NR or the full NCBI protein taxon map. Downloaded archives and DIAMOND
+inputs are removed after the build; the extracted taxonomy is retained. The
+command fails rather than replacing an existing download or `petra.dmnd`.
 
 Add `--build-rna-dbs` to also build the databases used for rRNA detection, next
 to `petra.dmnd` in the same output directory:
@@ -37,11 +39,12 @@ to `petra.dmnd` in the same output directory:
 - `petra.lsu.fasta`, a BLAST database of SILVA LSURef NR99 and EUKARYOME,
   carrying the lineage in each sequence header.
 
-This part requires `makeblastdb`, `cmpress` and `taxonkit` on `PATH`, plus an
-NCBI taxonomy dump that `taxonkit` can read. SILVA sequences of unidentified
-organisms are discarded, and PR2 sequences already present in SILVA are dropped
-so the SSU database holds each accession once. 
-Sources are downloaded into the output directory and removed after the build.
+This part requires `makeblastdb`, `cmpress` and `taxonkit` on `PATH`. PETRA
+passes the bundled `database/taxonomy/` directory to TaxonKit while constructing
+the RNA databases. SILVA sequences of unidentified organisms are discarded, and
+PR2 sequences already present in SILVA are dropped so the SSU database holds
+each accession once. Other sources are downloaded into the output directory and
+removed after the build.
 
 Because the DIAMOND build takes several hours, the two halves can be run
 separately. `--skip-diamond-db` leaves an existing `petra.dmnd` untouched:

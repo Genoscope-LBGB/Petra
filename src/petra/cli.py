@@ -18,9 +18,12 @@ from .database import (
     DIAMOND_DATABASE_FILENAME,
     LSU_DATABASE_FILENAME,
     SSU_DATABASE_FILENAME,
+    TAXONOMY_DIRECTORY_NAME,
     DatabaseBuildError,
     build_diamond_database,
     build_rna_databases,
+    install_taxonomy_database,
+    validate_taxonomy_directory,
 )
 from .launcher import LauncherError, launch_workflow, profile_summaries
 from .taxonomy import HostTaxonError, resolve_host_phylum
@@ -429,6 +432,16 @@ def run(
                 "--skip-diamond-db'.",
                 param_hint="--database",
             )
+    taxonomy = Path()
+    if not skip_taxonomic_assignment or rrna:
+        assert database is not None
+        try:
+            taxonomy = validate_taxonomy_directory(database / TAXONOMY_DIRECTORY_NAME)
+        except DatabaseBuildError as error:
+            raise typer.BadParameter(
+                f"{error} Build it with 'petra build-db --output {database}'.",
+                param_hint="--database",
+            ) from error
     try:
         # taxonkit resolves the host phylum, so PATH is checked first to report a
         # missing tool as such instead of as a resolution failure.
@@ -438,7 +451,9 @@ def run(
             skip_taxonomic_assignment=skip_taxonomic_assignment,
         )
         host_phylum = (
-            resolve_host_phylum(host_taxon) if host_taxon is not None else None
+            resolve_host_phylum(host_taxon, taxonomy=taxonomy)
+            if host_taxon is not None
+            else None
         )
         database_path = database if database is not None else Path()
         workflow_config = {
@@ -466,6 +481,7 @@ def run(
             "clan_info": database_path / CLAN_INFO_FILENAME,
             "ssu_database": database_path / SSU_DATABASE_FILENAME,
             "lsu_database": database_path / LSU_DATABASE_FILENAME,
+            "taxonomy": taxonomy,
         }
         exit_code = launch_workflow(
             distribution_name="petra",
@@ -523,6 +539,20 @@ def build_db(
             rich_help_panel="Inputs",
         ),
     ] = None,
+    taxdump: Annotated[
+        Path | None,
+        typer.Option(
+            "--taxdump",
+            help=(
+                "Local NCBI taxdump archive. Downloads the current archive when "
+                "omitted."
+            ),
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            rich_help_panel="Inputs",
+        ),
+    ] = None,
     build_rna_dbs: Annotated[
         bool,
         typer.Option(
@@ -547,7 +577,7 @@ def build_db(
         ),
     ] = False,
 ) -> None:
-    """Build the taxonomy-aware DIAMOND database and, optionally, the rRNA ones."""
+    """Build PETRA databases with their matching NCBI taxonomy data."""
     if skip_diamond_db and not build_rna_dbs:
         raise typer.BadParameter(
             "--skip-diamond-db leaves nothing to build. Add --build-rna-dbs.",
@@ -561,6 +591,7 @@ def build_db(
         )
 
     try:
+        taxonomy = install_taxonomy_database(output=output, taxdump=taxdump)
         if not skip_diamond_db:
             build_diamond_database(
                 fasta=fasta,
@@ -568,7 +599,7 @@ def build_db(
                 output=output,
             )
         if build_rna_dbs:
-            build_rna_databases(output=output)
+            build_rna_databases(output=output, taxonomy=taxonomy)
     except DatabaseBuildError as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1) from error

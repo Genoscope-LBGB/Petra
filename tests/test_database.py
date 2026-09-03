@@ -5,6 +5,7 @@ import io
 import os
 import stat
 import subprocess
+import tarfile
 import sys
 import tempfile
 import unittest
@@ -53,10 +54,7 @@ SILVA_LSU_FASTA = (
     ">ZZ000002.1.2600 unidentified;unidentified fungus\n"
     "GGGGGGGG\n"
 )
-EUKARYOME_FASTA = (
-    ">MH863990;k__Fungi;p__Basidiomycota;s__Agaricus_bisporus\n"
-    "TTAACCGG\n"
-)
+EUKARYOME_FASTA = ">MH863990;k__Fungi;p__Basidiomycota;s__Agaricus_bisporus\nTTAACCGG\n"
 # Rfam clan information lists family names, not accessions, and a covariance
 # model declares both.
 CM_FAMILIES = {
@@ -101,9 +99,7 @@ def _write_stub(directory: Path, name: str, stdout: str = "") -> Path:
     script.write_text(_STUB_TEMPLATE.format(stdout=stdout), encoding="utf-8")
     if os.name == "nt":
         launcher = directory / f"{name}.bat"
-        launcher.write_text(
-            f'@"{sys.executable}" "{script}" %*\n', encoding="utf-8"
-        )
+        launcher.write_text(f'@"{sys.executable}" "{script}" %*\n', encoding="utf-8")
     else:
         launcher = directory / name
         launcher.write_text(
@@ -135,6 +131,17 @@ def _zip_bytes(name: str, text: str) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as bundle:
         bundle.writestr(name, text)
+    return buffer.getvalue()
+
+
+def _taxdump_bytes() -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as bundle:
+        for filename in database.TAXONOMY_FILENAMES:
+            payload = f"{filename}\n".encode()
+            member = tarfile.TarInfo(filename)
+            member.size = len(payload)
+            bundle.addfile(member, io.BytesIO(payload))
     return buffer.getvalue()
 
 
@@ -179,6 +186,57 @@ def _fasta_records(path: Path) -> dict[str, str]:
     return records
 
 
+class InstallTaxonomyDatabaseTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.output = Path(self.temporary.name) / "database"
+
+    def test_downloads_and_keeps_the_extracted_taxonomy(self) -> None:
+        download = _fake_download({database.TAXDUMP_URL: _taxdump_bytes()})
+        with patch.object(database, "_download", download):
+            taxonomy = database.install_taxonomy_database(
+                output=self.output,
+                taxdump=None,
+            )
+
+        self.assertEqual(taxonomy, self.output / database.TAXONOMY_DIRECTORY_NAME)
+        for filename in database.TAXONOMY_FILENAMES:
+            self.assertEqual(
+                (taxonomy / filename).read_text(encoding="utf-8"),
+                f"{filename}\n",
+            )
+        self.assertFalse((self.output / "taxdump.tar.gz").exists())
+
+    def test_reuses_an_existing_complete_taxonomy(self) -> None:
+        taxonomy = self.output / database.TAXONOMY_DIRECTORY_NAME
+        taxonomy.mkdir(parents=True)
+        for filename in database.TAXONOMY_FILENAMES:
+            (taxonomy / filename).touch()
+
+        with patch.object(database, "_download") as download:
+            result = database.install_taxonomy_database(
+                output=self.output,
+                taxdump=None,
+            )
+
+        self.assertEqual(result, taxonomy)
+        download.assert_not_called()
+
+    def test_rejects_an_incomplete_existing_taxonomy(self) -> None:
+        taxonomy = self.output / database.TAXONOMY_DIRECTORY_NAME
+        taxonomy.mkdir(parents=True)
+        (taxonomy / "names.dmp").touch()
+
+        with self.assertRaises(DatabaseBuildError) as raised:
+            database.install_taxonomy_database(
+                output=self.output,
+                taxdump=None,
+            )
+
+        self.assertIn("nodes.dmp", str(raised.exception))
+
+
 class BuildRnaDatabasesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -187,6 +245,10 @@ class BuildRnaDatabasesTest(unittest.TestCase):
         self.tools = self.directory / "tools"
         self.tools.mkdir()
         self.output = self.directory / "database"
+        self.taxonomy = self.output / database.TAXONOMY_DIRECTORY_NAME
+        self.taxonomy.mkdir(parents=True)
+        for filename in database.TAXONOMY_FILENAMES:
+            (self.taxonomy / filename).touch()
         # taxonkit resolves every rank except the PR2 supergroup and division,
         # so the deepest resolved rank must win.
         _write_stub(self.tools, "makeblastdb")
@@ -212,7 +274,10 @@ class BuildRnaDatabasesTest(unittest.TestCase):
 
     def _build(self) -> database.RnaDatabases:
         with patch.object(database, "_download", _fake_download(_payloads())):
-            return build_rna_databases(output=self.output)
+            return build_rna_databases(
+                output=self.output,
+                taxonomy=self.taxonomy,
+            )
 
     def test_builds_every_database_and_removes_downloads(self) -> None:
         databases = self._build()
@@ -231,6 +296,17 @@ class BuildRnaDatabasesTest(unittest.TestCase):
             ),
         )
         self.assertFalse((self.output / "rna_sources").exists())
+
+    def test_uses_the_bundled_taxonomy_for_name_resolution(self) -> None:
+        self._build()
+
+        arguments = _stub_arguments(self.tools, "taxonkit")
+        self.assertGreaterEqual(len(arguments), 2)
+        for command in arguments:
+            self.assertEqual(
+                command[:3],
+                ["--data-dir", str(self.taxonomy), "name2taxid"],
+            )
 
     def test_concatenates_every_rfam_model_before_cmpress(self) -> None:
         databases = self._build()
@@ -273,7 +349,10 @@ class BuildRnaDatabasesTest(unittest.TestCase):
                 with patch.object(
                     database, "_remove_source_directory", lambda path, strict: None
                 ):
-                    build_rna_databases(output=self.output)
+                    build_rna_databases(
+                        output=self.output,
+                        taxonomy=self.taxonomy,
+                    )
 
         rows = [
             line.split("\t")
@@ -314,7 +393,10 @@ class BuildRnaDatabasesTest(unittest.TestCase):
                 with patch.object(
                     database, "_remove_source_directory", lambda path, strict: None
                 ):
-                    build_rna_databases(output=self.output)
+                    build_rna_databases(
+                        output=self.output,
+                        taxonomy=self.taxonomy,
+                    )
 
         rows = [
             line.split("\t")
@@ -358,14 +440,23 @@ class BuildRnaDatabasesTest(unittest.TestCase):
         with patch.object(database, "_run", failing_run):
             with patch.object(database, "_download", _fake_download(_payloads())):
                 with self.assertRaises(DatabaseBuildError):
-                    build_rna_databases(output=self.output)
+                    build_rna_databases(
+                        output=self.output,
+                        taxonomy=self.taxonomy,
+                    )
 
-        self.assertEqual(sorted(path.name for path in self.output.iterdir()), [])
+        self.assertEqual(
+            sorted(path.name for path in self.output.iterdir()),
+            [database.TAXONOMY_DIRECTORY_NAME],
+        )
 
     def test_reports_a_missing_executable(self) -> None:
         with patch.object(database.shutil, "which", return_value=None):
             with self.assertRaises(DatabaseBuildError) as raised:
-                build_rna_databases(output=self.output)
+                build_rna_databases(
+                    output=self.output,
+                    taxonomy=self.taxonomy,
+                )
 
         self.assertIn("'makeblastdb' executable was not found", str(raised.exception))
 
@@ -532,9 +623,7 @@ class SilvaTaxonMapTest(unittest.TestCase):
 
         self.assertEqual(taxon_map.taxids["AY855839.1.1390"], 562)
         self.assertEqual(taxon_map.unidentified, {"XX999999.1.1200"})
-        self.assertEqual(
-            taxon_map.accessions, {"AY855839", "JQ000001", "XX999999"}
-        )
+        self.assertEqual(taxon_map.accessions, {"AY855839", "JQ000001", "XX999999"})
 
     def test_rejects_a_taxon_map_without_accessions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -568,6 +657,8 @@ class EukaryomeRecordsTest(unittest.TestCase):
 
 
 class ResolveTaxidsTest(unittest.TestCase):
+    taxonomy = Path("database/taxonomy")
+
     def test_prefers_the_deepest_rank_known_to_ncbi(self) -> None:
         ranks = {"seq1": ("Eukaryota", "Obazoa", "Opisthokonta", "Unknown clade")}
         completed = subprocess.CompletedProcess(
@@ -578,7 +669,11 @@ class ResolveTaxidsTest(unittest.TestCase):
         )
 
         with patch.object(database.subprocess, "run", return_value=completed):
-            taxids = database._resolve_taxids(ranks, taxonkit="taxonkit")
+            taxids = database._resolve_taxids(
+                ranks,
+                taxonkit="taxonkit",
+                taxonomy=self.taxonomy,
+            )
 
         self.assertEqual(taxids, {"seq1": 33154})
 
@@ -588,12 +683,7 @@ class ResolveTaxidsTest(unittest.TestCase):
         name2taxid = subprocess.CompletedProcess(
             args=[],
             returncode=0,
-            stdout=(
-                "Eukaryota\t2759\n"
-                "Fungi\t4751\n"
-                "Duplicata\t111\n"
-                "Duplicata\t222\n"
-            ),
+            stdout=("Eukaryota\t2759\nFungi\t4751\nDuplicata\t111\nDuplicata\t222\n"),
             stderr="",
         )
         lineages = subprocess.CompletedProcess(
@@ -612,11 +702,15 @@ class ResolveTaxidsTest(unittest.TestCase):
             taxids = database._resolve_taxids(
                 {"seq1": ("Eukaryota", "Fungi", "Duplicata")},
                 taxonkit="taxonkit",
+                taxonomy=self.taxonomy,
             )
 
         self.assertEqual(taxids, {"seq1": 111})
         self.assertEqual(run.call_count, 2)
-        self.assertEqual(run.call_args_list[1].args[0], ["taxonkit", "lineage"])
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            ["taxonkit", "--data-dir", str(self.taxonomy), "lineage"],
+        )
         self.assertEqual(run.call_args_list[1].kwargs["input"], "111\n222\n")
 
     def test_falls_back_when_a_homonym_cannot_be_disambiguated(self) -> None:
@@ -642,6 +736,7 @@ class ResolveTaxidsTest(unittest.TestCase):
             taxids = database._resolve_taxids(
                 {"seq1": ("Eukaryota", "Duplicata", "Known deeper rank")},
                 taxonkit="taxonkit",
+                taxonomy=self.taxonomy,
             )
 
         self.assertEqual(taxids, {"seq1": 2759})
@@ -658,6 +753,7 @@ class ResolveTaxidsTest(unittest.TestCase):
             candidates = database._name_to_taxid(
                 ["Duplicata"],
                 taxonkit="taxonkit",
+                taxonomy=self.taxonomy,
             )
 
         self.assertEqual(candidates, {"Duplicata": [111, 222]})
@@ -669,7 +765,11 @@ class ResolveTaxidsTest(unittest.TestCase):
         )
 
         with patch.object(database.subprocess, "run", return_value=completed):
-            taxids = database._resolve_taxids(ranks, taxonkit="taxonkit")
+            taxids = database._resolve_taxids(
+                ranks,
+                taxonkit="taxonkit",
+                taxonomy=self.taxonomy,
+            )
 
         self.assertEqual(taxids, {})
 
@@ -680,7 +780,11 @@ class ResolveTaxidsTest(unittest.TestCase):
 
         with patch.object(database.subprocess, "run", return_value=completed):
             with self.assertRaises(DatabaseBuildError) as raised:
-                database._resolve_taxids({"seq1": ("Fungi",)}, taxonkit="taxonkit")
+                database._resolve_taxids(
+                    {"seq1": ("Fungi",)},
+                    taxonkit="taxonkit",
+                    taxonomy=self.taxonomy,
+                )
 
         self.assertIn("taxonomy data not found", str(raised.exception))
 

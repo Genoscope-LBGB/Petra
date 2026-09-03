@@ -30,6 +30,10 @@ class RunCliTest(unittest.TestCase):
             "petra.lsu.fasta",
         ):
             (self.database / filename).touch()
+        self.taxonomy = self.database / "taxonomy"
+        self.taxonomy.mkdir()
+        for filename in ("names.dmp", "nodes.dmp", "delnodes.dmp", "merged.dmp"):
+            (self.taxonomy / filename).touch()
         self.assembly = self.directory / "assembly.fasta"
         self.reads = self.directory / "reads.fastq"
         for path in (self.assembly, self.reads):
@@ -100,6 +104,7 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         workflow_config = launch.call_args.kwargs["workflow_config"]
         self.assertEqual(workflow_config["diamond_db"], self.database / "petra.dmnd")
+        self.assertEqual(workflow_config["taxonomy"], self.taxonomy)
         self.assertEqual(
             workflow_config["sequencing_technology"], SequencingTechnology.PACBIO
         )
@@ -201,6 +206,20 @@ class RunCliTest(unittest.TestCase):
         )
         launch.assert_not_called()
 
+    def test_rejects_a_database_without_the_bundled_taxonomy(self) -> None:
+        (self.taxonomy / "nodes.dmp").unlink()
+
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(app, self.run_arguments())
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("nodes.dmp", _flatten(result.output))
+        self.assertIn("petra build-db", _flatten(result.output))
+        launch.assert_not_called()
+
     def test_rejects_a_diamond_database_file_as_the_database(self) -> None:
         with (
             patch("petra.cli._require_executables"),
@@ -281,6 +300,7 @@ class RunCliTest(unittest.TestCase):
             workflow_config["lsu_database"],
             self.database / "petra.lsu.fasta",
         )
+        self.assertEqual(workflow_config["taxonomy"], self.taxonomy)
 
     def test_skips_taxonomic_assignment_for_rrna_without_reads_or_diamond(self) -> None:
         (self.database / "petra.dmnd").unlink()
@@ -414,7 +434,7 @@ class RunCliTest(unittest.TestCase):
             )
 
         self.assertEqual(result.exit_code, 0, result.output)
-        resolve.assert_called_once_with("9606")
+        resolve.assert_called_once_with("9606", taxonomy=self.taxonomy)
         self.assertEqual(
             launch.call_args.kwargs["workflow_config"]["host_phylum"],
             "Chordata",
@@ -500,17 +520,51 @@ def _flatten(output: str) -> str:
 class BuildDbCliTest(unittest.TestCase):
     def test_builds_only_the_diamond_database_by_default(self) -> None:
         with (
+            patch(
+                "petra.cli.install_taxonomy_database",
+                return_value=Path("database/taxonomy"),
+            ) as install,
             patch("petra.cli.build_diamond_database") as diamond,
             patch("petra.cli.build_rna_databases") as rna,
         ):
             result = CliRunner().invoke(app, ["build-db", "--output", "database"])
 
         self.assertEqual(result.exit_code, 0, result.output)
+        install.assert_called_once_with(output=Path("database"), taxdump=None)
         diamond.assert_called_once()
         rna.assert_not_called()
 
+    def test_passes_a_local_taxdump_to_the_installer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            taxdump = Path(temporary_directory) / "taxdump.tar.gz"
+            taxdump.touch()
+            with (
+                patch(
+                    "petra.cli.install_taxonomy_database",
+                    return_value=Path("database/taxonomy"),
+                ) as install,
+                patch("petra.cli.build_diamond_database"),
+            ):
+                result = CliRunner().invoke(
+                    app,
+                    [
+                        "build-db",
+                        "--output",
+                        "database",
+                        "--taxdump",
+                        str(taxdump),
+                    ],
+                )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        install.assert_called_once_with(output=Path("database"), taxdump=taxdump)
+
     def test_builds_both_databases_in_the_same_directory(self) -> None:
         with (
+            patch(
+                "petra.cli.install_taxonomy_database",
+                return_value=Path("database/taxonomy"),
+            ),
             patch("petra.cli.build_diamond_database") as diamond,
             patch("petra.cli.build_rna_databases") as rna,
         ):
@@ -522,9 +576,17 @@ class BuildDbCliTest(unittest.TestCase):
         self.assertEqual(
             diamond.call_args.kwargs["output"], rna.call_args.kwargs["output"]
         )
+        self.assertEqual(
+            rna.call_args.kwargs["taxonomy"],
+            Path("database/taxonomy"),
+        )
 
     def test_skips_the_diamond_database_when_asked(self) -> None:
         with (
+            patch(
+                "petra.cli.install_taxonomy_database",
+                return_value=Path("database/taxonomy"),
+            ),
             patch("petra.cli.build_diamond_database") as diamond,
             patch("petra.cli.build_rna_databases") as rna,
         ):
@@ -541,7 +603,10 @@ class BuildDbCliTest(unittest.TestCase):
 
         self.assertEqual(result.exit_code, 0, result.output)
         diamond.assert_not_called()
-        rna.assert_called_once_with(output=Path("database"))
+        rna.assert_called_once_with(
+            output=Path("database"),
+            taxonomy=Path("database/taxonomy"),
+        )
 
     def test_rejects_skipping_every_database(self) -> None:
         with (
@@ -592,6 +657,10 @@ class BuildDbCliTest(unittest.TestCase):
 
     def test_reports_a_build_failure(self) -> None:
         with (
+            patch(
+                "petra.cli.install_taxonomy_database",
+                return_value=Path("database/taxonomy"),
+            ),
             patch("petra.cli.build_diamond_database"),
             patch(
                 "petra.cli.build_rna_databases",

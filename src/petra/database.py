@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,21 +21,18 @@ TAXON_MAP_URL = (
     "prot.accession2taxid.FULL.gz"
 )
 RFAM_CM_URL = "https://rfam.org/family/{accession}/cm"
+TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
 RFAM_CLANIN_URL = "https://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.clanin"
 # Pinned rather than tracking the 'current' symlink: SILVA 144 dropped the LSU
 # exports entirely, and 138.2 is the last release providing both subunits.
 SILVA_RELEASE = "138.2"
 _SILVA_EXPORTS = f"https://ftp.arb-silva.de/release_{SILVA_RELEASE}/Exports"
-SILVA_SSU_URL = (
-    f"{_SILVA_EXPORTS}/SILVA_{SILVA_RELEASE}_SSURef_NR99_tax_silva.fasta.gz"
-)
+SILVA_SSU_URL = f"{_SILVA_EXPORTS}/SILVA_{SILVA_RELEASE}_SSURef_NR99_tax_silva.fasta.gz"
 SILVA_SSU_TAXON_MAP_URL = (
     f"{_SILVA_EXPORTS}/taxonomy/ncbi/"
     f"taxmap_embl-ebi_ena_ssu_ref_nr99_{SILVA_RELEASE}.txt.gz"
 )
-SILVA_LSU_URL = (
-    f"{_SILVA_EXPORTS}/SILVA_{SILVA_RELEASE}_LSURef_NR99_tax_silva.fasta.gz"
-)
+SILVA_LSU_URL = f"{_SILVA_EXPORTS}/SILVA_{SILVA_RELEASE}_LSURef_NR99_tax_silva.fasta.gz"
 SILVA_LSU_TAXON_MAP_URL = (
     f"{_SILVA_EXPORTS}/taxonomy/ncbi/"
     f"taxmap_embl-ebi_ena_lsu_ref_nr99_{SILVA_RELEASE}.txt.gz"
@@ -67,8 +65,11 @@ COVARIANCE_MODEL_FILENAME = "petra.rrna.cm"
 CLAN_INFO_FILENAME = "petra.rrna.clanin"
 SSU_DATABASE_FILENAME = "petra.ssu.fasta"
 LSU_DATABASE_FILENAME = "petra.lsu.fasta"
+TAXONOMY_DIRECTORY_NAME = "taxonomy"
+TAXONOMY_FILENAMES = ("names.dmp", "nodes.dmp", "delnodes.dmp", "merged.dmp")
 _NR_FILENAME = "nr.gz"
 _TAXON_MAP_FILENAME = "prot.accession2taxid.FULL.gz"
+_TAXDUMP_ARCHIVE_FILENAME = "taxdump.tar.gz"
 _RNA_SOURCE_DIRNAME = "rna_sources"
 _CM_INDEX_SUFFIXES = (".i1f", ".i1i", ".i1m", ".i1p")
 _FASTA_SUFFIXES = (".fasta", ".fa", ".fas", ".fna")
@@ -106,6 +107,54 @@ class SilvaTaxonMap:
     taxids: dict[str, int]
     unidentified: set[str]
     accessions: set[str]
+
+
+def install_taxonomy_database(*, output: Path, taxdump: Path | None) -> Path:
+    """Install or reuse the NCBI taxonomy files required by TaxonKit."""
+    output_directory = _prepare_output_directory(output)
+    taxonomy_directory = output_directory / TAXONOMY_DIRECTORY_NAME
+    if _path_exists(taxonomy_directory):
+        if taxdump is not None:
+            raise DatabaseBuildError(
+                f"Taxonomy database already exists: {taxonomy_directory}. "
+                "Omit --taxdump to reuse it."
+            )
+        return validate_taxonomy_directory(taxonomy_directory)
+
+    downloaded = taxdump is None
+    archive = (
+        output_directory / _TAXDUMP_ARCHIVE_FILENAME
+        if downloaded
+        else _resolve_input(taxdump, "NCBI taxonomy dump")
+    )
+    if downloaded:
+        _reject_existing_download(archive)
+
+    try:
+        if downloaded:
+            _download(TAXDUMP_URL, archive, "NCBI taxonomy dump")
+        _extract_taxonomy_database(archive, taxonomy_directory)
+    except BaseException:
+        _remove_source_directory(taxonomy_directory, strict=False)
+        if downloaded:
+            _remove_downloads([archive], strict=False)
+        raise
+
+    if downloaded:
+        _remove_downloads([archive], strict=True)
+    logger.info("Taxonomy database ready: %s", taxonomy_directory)
+    return taxonomy_directory
+
+
+def validate_taxonomy_directory(path: Path) -> Path:
+    """Return a TaxonKit data directory after checking its required files."""
+    missing = [
+        filename for filename in TAXONOMY_FILENAMES if not (path / filename).is_file()
+    ]
+    if not path.is_dir() or missing:
+        detail = ", ".join(missing or TAXONOMY_FILENAMES)
+        raise DatabaseBuildError(f"NCBI taxonomy files not found in {path}: {detail}.")
+    return path
 
 
 def build_diamond_database(
@@ -305,6 +354,7 @@ def _require_executable(executable: str, label: str) -> str:
 def build_rna_databases(
     *,
     output: Path,
+    taxonomy: Path,
     makeblastdb_executable: str = "makeblastdb",
     cmpress_executable: str = "cmpress",
     taxonkit_executable: str = "taxonkit",
@@ -313,6 +363,7 @@ def build_rna_databases(
     makeblastdb = _require_executable(makeblastdb_executable, "BLAST+")
     cmpress = _require_executable(cmpress_executable, "Infernal")
     taxonkit = _require_executable(taxonkit_executable, "TaxonKit")
+    taxonomy = validate_taxonomy_directory(taxonomy)
 
     directory = _prepare_output_directory(output)
     databases = RnaDatabases(
@@ -350,12 +401,14 @@ def build_rna_databases(
             database=databases.ssu,
             makeblastdb=makeblastdb,
             taxonkit=taxonkit,
+            taxonomy=taxonomy,
         )
         _build_lsu_database(
             sources=sources,
             database=databases.lsu,
             makeblastdb=makeblastdb,
             taxonkit=taxonkit,
+            taxonomy=taxonomy,
         )
     except BaseException:
         for path in databases.paths:
@@ -485,6 +538,7 @@ def _build_ssu_database(
     database: Path,
     makeblastdb: str,
     taxonkit: str,
+    taxonomy: Path,
 ) -> None:
     silva_fasta = sources / "silva_ssu.fasta"
     silva_taxon_map = sources / "silva_ssu.taxmap"
@@ -513,7 +567,9 @@ def _build_ssu_database(
                 destination=combined,
                 excluded_accessions=silva.accessions,
             )
-            for identifier, taxid in _resolve_taxids(ranks, taxonkit=taxonkit).items():
+            for identifier, taxid in _resolve_taxids(
+                ranks, taxonkit=taxonkit, taxonomy=taxonomy
+            ).items():
                 taxids.write(f"{identifier}\t{taxid}\n")
     except OSError as error:
         raise DatabaseBuildError(f"Could not write {database}: {error}") from error
@@ -540,6 +596,7 @@ def _build_lsu_database(
     database: Path,
     makeblastdb: str,
     taxonkit: str,
+    taxonomy: Path,
 ) -> None:
     silva_fasta = sources / "silva_lsu.fasta"
     silva_taxon_map = sources / "silva_lsu.taxmap"
@@ -569,7 +626,7 @@ def _build_lsu_database(
                 taxid = silva.taxids.get(identifier)
                 if taxid is not None:
                     taxids.write(f"{identifier}\t{taxid}\n")
-            resolved = _resolve_taxids(ranks, taxonkit=taxonkit)
+            resolved = _resolve_taxids(ranks, taxonkit=taxonkit, taxonomy=taxonomy)
             for identifier, taxid in resolved.items():
                 taxids.write(f"{identifier}\t{taxid}\n")
     except OSError as error:
@@ -627,7 +684,9 @@ def _read_silva_taxon_map(path: Path) -> SilvaTaxonMap:
         path,
         len(unidentified),
     )
-    return SilvaTaxonMap(taxids=taxids, unidentified=unidentified, accessions=accessions)
+    return SilvaTaxonMap(
+        taxids=taxids, unidentified=unidentified, accessions=accessions
+    )
 
 
 def _iter_silva_records(path: Path, unidentified: set[str]):
@@ -690,9 +749,7 @@ def _pr2_lineage(fields: list[str]) -> tuple[str, ...]:
     for position, field in enumerate(fields):
         if field in _PR2_DOMAINS:
             return tuple(
-                sys.intern(rank.replace("_", " "))
-                for rank in fields[position:]
-                if rank
+                sys.intern(rank.replace("_", " ")) for rank in fields[position:] if rank
             )
     return ()
 
@@ -727,19 +784,22 @@ def _resolve_taxids(
     ranks_by_identifier: dict[str, tuple[str, ...]],
     *,
     taxonkit: str,
+    taxonomy: Path,
 ) -> dict[str, int]:
     """Map each record to the deepest unambiguous NCBI taxon in its lineage."""
     names = sorted({rank for ranks in ranks_by_identifier.values() for rank in ranks})
     if not names:
         return {}
-    candidates_by_name = _name_to_taxid(names, taxonkit=taxonkit)
+    candidates_by_name = _name_to_taxid(names, taxonkit=taxonkit, taxonomy=taxonomy)
     ambiguous_taxids = {
         taxid
         for candidates in candidates_by_name.values()
         if len(candidates) > 1
         for taxid in candidates
     }
-    lineages = _taxid_lineage_names(ambiguous_taxids, taxonkit=taxonkit)
+    lineages = _taxid_lineage_names(
+        ambiguous_taxids, taxonkit=taxonkit, taxonomy=taxonomy
+    )
 
     taxids: dict[str, int] = {}
     for identifier, ranks in ranks_by_identifier.items():
@@ -773,11 +833,13 @@ def _resolve_taxids(
     return taxids
 
 
-def _name_to_taxid(names: list[str], *, taxonkit: str) -> dict[str, list[int]]:
+def _name_to_taxid(
+    names: list[str], *, taxonkit: str, taxonomy: Path
+) -> dict[str, list[int]]:
     logger.info("Resolving %d taxon names with taxonkit", len(names))
     try:
         process = subprocess.run(
-            [taxonkit, "name2taxid"],
+            [taxonkit, "--data-dir", str(taxonomy), "name2taxid"],
             input="\n".join(names) + "\n",
             capture_output=True,
             text=True,
@@ -807,14 +869,16 @@ def _name_to_taxid(names: list[str], *, taxonkit: str) -> dict[str, list[int]]:
     return resolved
 
 
-def _taxid_lineage_names(taxids: set[int], *, taxonkit: str) -> dict[int, set[str]]:
+def _taxid_lineage_names(
+    taxids: set[int], *, taxonkit: str, taxonomy: Path
+) -> dict[int, set[str]]:
     if not taxids:
         return {}
     ordered_taxids = sorted(taxids)
     logger.info("Reading lineages for %d ambiguous taxon candidates", len(taxids))
     try:
         process = subprocess.run(
-            [taxonkit, "lineage"],
+            [taxonkit, "--data-dir", str(taxonomy), "lineage"],
             input="\n".join(str(taxid) for taxid in ordered_taxids) + "\n",
             capture_output=True,
             text=True,
@@ -905,6 +969,50 @@ def _download_archive(url: str, destination: Path, label: str) -> None:
     _remove_downloads([archive], strict=False)
 
 
+def _extract_taxonomy_database(archive: Path, destination: Path) -> None:
+    logger.info("Extracting NCBI taxonomy dump from %s", archive)
+    try:
+        with tarfile.open(archive, mode="r:*") as bundle:
+            members_by_name: dict[str, tarfile.TarInfo] = {}
+            for member in bundle.getmembers():
+                name = Path(member.name).name
+                if name not in TAXONOMY_FILENAMES or not member.isfile():
+                    continue
+                if name in members_by_name:
+                    raise DatabaseBuildError(
+                        f"NCBI taxonomy dump contains more than one {name} file: "
+                        f"{archive}"
+                    )
+                members_by_name[name] = member
+
+            missing = [
+                filename
+                for filename in TAXONOMY_FILENAMES
+                if filename not in members_by_name
+            ]
+            if missing:
+                raise DatabaseBuildError(
+                    f"NCBI taxonomy dump is missing required files: "
+                    f"{', '.join(missing)}."
+                )
+
+            destination.mkdir()
+            for filename in TAXONOMY_FILENAMES:
+                source = bundle.extractfile(members_by_name[filename])
+                if source is None:
+                    raise DatabaseBuildError(
+                        f"Could not read {filename} from NCBI taxonomy dump."
+                    )
+                with source, (destination / filename).open("xb") as extracted:
+                    shutil.copyfileobj(source, extracted)
+    except DatabaseBuildError:
+        raise
+    except (OSError, tarfile.TarError) as error:
+        raise DatabaseBuildError(
+            f"Could not extract NCBI taxonomy dump {archive}: {error}"
+        ) from error
+
+
 def _extract_fasta_member(archive: Path, destination: Path) -> None:
     with zipfile.ZipFile(archive) as bundle:
         members = [
@@ -934,9 +1042,7 @@ def _run(executable: str, arguments: list[str], *, cwd: Path, label: str) -> Non
     except OSError as error:
         raise DatabaseBuildError(f"Could not run {label}: {error}") from error
     if process.returncode != 0:
-        raise DatabaseBuildError(
-            f"{label} failed with exit code {process.returncode}."
-        )
+        raise DatabaseBuildError(f"{label} failed with exit code {process.returncode}.")
 
 
 def _sibling(path: Path, suffix: str) -> Path:
