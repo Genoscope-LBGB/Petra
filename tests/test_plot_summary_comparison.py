@@ -63,7 +63,7 @@ def _run_directory(directory: Path, name: str, rows: tuple[str, ...]) -> Path:
 _FISH = (
     _row("contig-1", 30_000_000, 42.0, 46, {"domain": "Eukaryota", "phylum": "Chordata"}),
     _row("contig-2", 68_000, 49.8, 8, {"domain": "Eukaryota"}),
-    _row("contig-3", 21_000, 46.0, 2, {}, "low_confidence"),
+    _row("contig-3", 21_000, 46.0, 2, {}, "insufficient_support"),
 )
 _SPONGE = (
     _row("contig-1", 900_000, 60.1, 25, {"domain": "Bacteria"}),

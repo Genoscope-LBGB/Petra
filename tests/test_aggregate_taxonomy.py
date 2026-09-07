@@ -25,7 +25,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 raw_taxonomy,
                 [
                     self._taxonomy_row("assigned", "Bacteria"),
-                    self._taxonomy_row("low_confidence", "N/A"),
+                    self._taxonomy_row("insufficient_support", "N/A"),
                     self._taxonomy_row("disagreement", "Bacteria"),
                 ],
             )
@@ -34,14 +34,14 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 [
                     ("disagreement", "3"),
                     ("assigned", "10.5"),
-                    ("low_confidence", "0"),
+                    ("insufficient_support", "0"),
                 ],
             )
             self._write_reasons(
                 assignment_reasons,
                 [
                     ("assigned", "-"),
-                    ("low_confidence", "low_confidence"),
+                    ("insufficient_support", "insufficient_support"),
                     ("disagreement", "-"),
                 ],
             )
@@ -49,7 +49,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
                 whokaryote_reasons,
                 [
                     ("assigned", "-"),
-                    ("low_confidence", "-"),
+                    ("insufficient_support", "-"),
                     ("disagreement", "whokaryote"),
                 ],
             )
@@ -82,9 +82,9 @@ class AggregateTaxonomyTest(unittest.TestCase):
             self.assertEqual(rows[1][-1], "-")
             self.assertEqual(
                 rows[2][0:6],
-                ["low_confidence", "100", "42.50", "0", "1", "N/A"],
+                ["insufficient_support", "100", "42.50", "0", "1", "N/A"],
             )
-            self.assertEqual(rows[2][-1], "low_confidence")
+            self.assertEqual(rows[2][-1], "insufficient_support")
             self.assertEqual(
                 rows[3],
                 [

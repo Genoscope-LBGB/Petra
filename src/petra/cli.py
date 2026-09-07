@@ -257,15 +257,49 @@ def run(
             max=1.0,
             callback=_validate_alpha,
             help=(
-                "Minimum share of a sequence's aligned clusters that must support "
-                "a taxon for it to be assigned. The share must hold at the lower "
-                "bound of its 95% confidence interval, so sequences with few "
-                "aligned clusters stay unassigned."
+                "Minimum observed share of a sequence's aligned clusters that "
+                "must support a taxon."
             ),
             rich_help_panel="Taxonomic assignment",
             show_default=True,
         ),
     ] = 0.5,
+    min_aligned_clusters: Annotated[
+        int,
+        typer.Option(
+            "--min-aligned-clusters",
+            min=3,
+            help=(
+                "Minimum aligned clusters required per sequence at or below "
+                "--cluster-support-length. Longer sequences require more support."
+            ),
+            rich_help_panel="Taxonomic assignment",
+            show_default=True,
+        ),
+    ] = 3,
+    cluster_support_length: Annotated[
+        int,
+        typer.Option(
+            "--cluster-support-length",
+            min=1,
+            help="Sequence length in bp above which required cluster support grows.",
+            rich_help_panel="Taxonomic assignment",
+            show_default=True,
+        ),
+    ] = 50_000,
+    clusters_per_decade: Annotated[
+        int,
+        typer.Option(
+            "--clusters-per-decade",
+            min=1,
+            help=(
+                "Additional aligned clusters required per tenfold length increase "
+                "above --cluster-support-length."
+            ),
+            rich_help_panel="Taxonomic assignment",
+            show_default=True,
+        ),
+    ] = 3,
     rrna: Annotated[
         bool,
         typer.Option(
@@ -466,6 +500,9 @@ def run(
             "max_clusters_per_sequence": max_clusters_per_sequence,
             "max_target_occurrences": max_target_occurrences,
             "alpha": alpha,
+            "min_aligned_clusters": min_aligned_clusters,
+            "cluster_support_length": cluster_support_length,
+            "clusters_per_decade": clusters_per_decade,
             "summary_font_size": summary_font_size,
             "summary_colors": summary_colors,
             "summary_disabled_panels": [

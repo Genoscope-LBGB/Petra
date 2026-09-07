@@ -9,14 +9,18 @@ SCRIPTS_DIRECTORY = (
 )
 sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
-from assign_taxonomy import TAXONOMIC_RANKS, assign_taxonomy  # noqa: E402
+from assign_taxonomy import (  # noqa: E402
+    TAXONOMIC_RANKS,
+    _minimum_aligned_clusters,
+    assign_taxonomy,
+)
 
 _DOMAIN_COLUMN = 4
 _PHYLUM_COLUMN = _DOMAIN_COLUMN + TAXONOMIC_RANKS.index("phylum")
 
 
 class AssignTaxonomyTest(unittest.TestCase):
-    def test_assigns_ranks_supported_by_a_confident_majority(self) -> None:
+    def test_assigns_ranks_supported_by_an_alpha_majority(self) -> None:
         bacteria = self._lineage(domain="Bacteria", phylum="Pseudomonadota")
         archaea = self._lineage(domain="Archaea", phylum="Thermoproteota")
         rows, reasons = self._assign(
@@ -50,33 +54,82 @@ class AssignTaxonomyTest(unittest.TestCase):
 
         self.assertEqual(rows[1][0:4], ["contig", "8", "50.00", "0"])
 
-    def test_unanimous_votes_need_a_minimum_number_of_clusters(self) -> None:
-        bacteria = self._lineage(domain="Bacteria")
-        cases = ((2, "N/A", "low_confidence"), (3, "Bacteria", "-"))
-        for clusters, domain, reason in cases:
-            with self.subTest(clusters=clusters):
+    def test_applies_the_minimum_and_length_anchor_to_the_whole_sequence(self) -> None:
+        bacteria = self._lineage(domain="Bacteria", phylum="Pseudomonadota")
+        cases = (
+            (100, 2, "N/A", "insufficient_support"),
+            (50_000, 3, "Bacteria", "-"),
+            (50_001, 3, "N/A", "insufficient_support"),
+            (50_001, 4, "Bacteria", "-"),
+        )
+        for length, clusters, domain, reason in cases:
+            with self.subTest(length=length, clusters=clusters):
                 rows, reasons = self._assign(
-                    {"contig": 100},
+                    {"contig": length},
                     self._protein_ids("contig", clusters),
                     self._hits("contig", [bacteria] * clusters),
                 )
-
                 self.assertEqual(rows[1][_DOMAIN_COLUMN], domain)
                 self.assertEqual(reasons[1], ["contig", reason])
+                if domain == "N/A":
+                    self.assertEqual(
+                        rows[1][_DOMAIN_COLUMN:], ["N/A"] * len(TAXONOMIC_RANKS)
+                    )
 
-    def test_reports_low_confidence_when_only_the_sample_size_rejects_the_majority(
-        self,
-    ) -> None:
+    def test_logarithmic_support_interpolates_and_rounds_up(self) -> None:
+        cases = (
+            (0, 3),
+            (100_000, 4),
+            (500_000, 6),
+            (500_001, 7),
+            (5_000_000, 9),
+            (50_000_000, 12),
+            (50_000_001, 13),
+        )
+        for length, minimum in cases:
+            with self.subTest(length=length):
+                self.assertEqual(
+                    _minimum_aligned_clusters(length, 3, 50_000, 3), minimum
+                )
+
+    def test_support_counts_aligned_clusters_not_predictions_or_hits(self) -> None:
         bacteria = self._lineage(domain="Bacteria")
-        archaea = self._lineage(domain="Archaea")
+        hits = self._hits("contig", [bacteria] * 3)
+        rows, reasons = self._assign(
+            {"contig": 50_001},
+            self._protein_ids("contig", 10),
+            hits + hits,
+        )
+        self.assertEqual(rows[1][3:5], ["3", "N/A"])
+        self.assertEqual(reasons[1], ["contig", "insufficient_support"])
+
+    def test_support_is_not_required_again_for_each_rank(self) -> None:
+        rows, reasons = self._assign(
+            {"contig": 500_000},
+            self._protein_ids("contig", 6),
+            self._hits(
+                "contig",
+                [self._lineage(domain="Bacteria", phylum="Pseudomonadota")] * 3
+                + [self._lineage(domain="Bacteria", phylum="Bacillota")]
+                + [self._lineage(domain="Archaea", phylum="Thermoproteota")] * 2,
+            ),
+        )
+        self.assertEqual(rows[1][_DOMAIN_COLUMN], "Bacteria")
+        self.assertEqual(rows[1][_PHYLUM_COLUMN], "Pseudomonadota")
+        self.assertEqual(reasons[1], ["contig", "-"])
+
+    def test_accepts_a_narrow_observed_majority(self) -> None:
         rows, reasons = self._assign(
             {"contig": 100},
-            self._protein_ids("contig", 10),
-            self._hits("contig", [bacteria] * 6 + [archaea] * 4),
+            self._protein_ids("contig", 100),
+            self._hits(
+                "contig",
+                [self._lineage(domain="Bacteria")] * 51
+                + [self._lineage(domain="Archaea")] * 49,
+            ),
         )
-
-        self.assertEqual(rows[1][_DOMAIN_COLUMN], "N/A")
-        self.assertEqual(reasons[1], ["contig", "low_confidence"])
+        self.assertEqual(rows[1][_DOMAIN_COLUMN], "Bacteria")
+        self.assertEqual(reasons[1], ["contig", "-"])
 
     def test_reports_no_consensus_when_the_observed_share_rejects_the_majority(
         self,
@@ -92,18 +145,61 @@ class AssignTaxonomyTest(unittest.TestCase):
         self.assertEqual(rows[1][_DOMAIN_COLUMN], "N/A")
         self.assertEqual(reasons[1], ["contig", "no_consensus"])
 
-    def test_alpha_sets_the_share_the_confidence_bound_must_reach(self) -> None:
+    def test_alpha_compares_the_observed_share_inclusively(self) -> None:
         bacteria = self._lineage(domain="Bacteria")
         archaea = self._lineage(domain="Archaea")
+        for alpha, domain in ((0.6, "Bacteria"), (0.61, "N/A")):
+            with self.subTest(alpha=alpha):
+                rows, reasons = self._assign(
+                    {"contig": 100},
+                    self._protein_ids("contig", 10),
+                    self._hits("contig", [bacteria] * 6 + [archaea] * 4),
+                    alpha=alpha,
+                )
+                self.assertEqual(rows[1][_DOMAIN_COLUMN], domain)
+                self.assertEqual(
+                    reasons[1],
+                    ["contig", "-" if domain != "N/A" else "no_consensus"],
+                )
+
+    def test_unanimous_clusters_can_reach_alpha_one(self) -> None:
         rows, reasons = self._assign(
             {"contig": 100},
-            self._protein_ids("contig", 10),
-            self._hits("contig", [bacteria] * 6 + [archaea] * 4),
-            alpha=0.2,
+            self._protein_ids("contig", 3),
+            self._hits("contig", [self._lineage(domain="Bacteria")] * 3),
+            alpha=1.0,
         )
-
         self.assertEqual(rows[1][_DOMAIN_COLUMN], "Bacteria")
         self.assertEqual(reasons[1], ["contig", "-"])
+
+    def test_custom_support_curve_controls_assignment(self) -> None:
+        # At 1 kb require four clusters; at 10 kb require six.
+        bacteria = self._lineage(domain="Bacteria")
+        for length, clusters, domain in (
+            (1_000, 3, "N/A"),
+            (1_000, 4, "Bacteria"),
+            (10_000, 5, "N/A"),
+            (10_000, 6, "Bacteria"),
+        ):
+            with self.subTest(length=length, clusters=clusters):
+                rows, _ = self._assign(
+                    {"contig": length},
+                    self._protein_ids("contig", clusters),
+                    self._hits("contig", [bacteria] * clusters),
+                    min_aligned_clusters=4,
+                    cluster_support_length=1_000,
+                    clusters_per_decade=2,
+                )
+                self.assertEqual(rows[1][_DOMAIN_COLUMN], domain)
+
+    def test_rejects_invalid_support_parameters(self) -> None:
+        for options in (
+            {"min_aligned_clusters": 2},
+            {"cluster_support_length": 0},
+            {"clusters_per_decade": 0},
+        ):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self._assign({"contig": 100}, [], [], **options)
 
     def test_rejects_an_alpha_outside_the_unit_interval(self) -> None:
         with self.assertRaisesRegex(ValueError, "alpha-majority threshold"):
@@ -210,7 +306,7 @@ class AssignTaxonomyTest(unittest.TestCase):
         sequences: dict[str, int | str],
         protein_ids: list[str],
         hits: list[tuple[str, str, str]],
-        **options: float,
+        **options: int | float,
     ) -> tuple[list[list[str]], list[list[str]]]:
         directory = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, directory)

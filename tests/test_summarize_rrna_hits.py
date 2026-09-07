@@ -91,6 +91,21 @@ class SummarizeRnaHitsTest(unittest.TestCase):
             ],
         )
 
+    def test_crlf_input_produces_the_same_summary_as_lf_input(self) -> None:
+        payload = _row().encode("utf-8")
+        self.lineages.write_bytes(payload)
+        summarize_rrna_hits(
+            self.lineages, self.destination, host_phylum="Chordata"
+        )
+        expected = self.destination.read_bytes()
+
+        self.lineages.write_bytes(payload.replace(b"\n", b"\r\n"))
+        summarize_rrna_hits(
+            self.lineages, self.destination, host_phylum="Chordata"
+        )
+
+        self.assertEqual(self.destination.read_bytes(), expected)
+
     def test_flags_a_hit_whose_lineage_lacks_the_host_phylum(self) -> None:
         self.lineages.write_text(
             _row(gene_id="rrna_1")

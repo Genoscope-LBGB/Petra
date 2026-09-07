@@ -47,7 +47,7 @@ def summarize_rrna_hits(
 ) -> None:
     rows: list[tuple[tuple[str, int, int, str], list[str]]] = []
     non_host_count = 0
-    with lineages.open(encoding="utf-8", newline="") as input_handle:
+    with lineages.open(encoding="utf-8") as input_handle:
         for line_number, line in enumerate(input_handle, start=1):
             if not line.strip():
                 continue

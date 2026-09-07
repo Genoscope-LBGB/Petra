@@ -4,7 +4,6 @@ from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
-from statistics import NormalDist
 from typing import Iterator
 
 TAXONOMIC_RANKS = (
@@ -27,10 +26,8 @@ TAXONOMIC_RANKS = (
 _MISSING_TAXON = "N/A"
 _REASON_COLUMN = "unassigned_reason"
 _NO_REASON = "-"
-_LOW_CONFIDENCE_REASON = "low_confidence"
+_INSUFFICIENT_SUPPORT_REASON = "insufficient_support"
 _NO_CONSENSUS_REASON = "no_consensus"
-_CONFIDENCE_LEVEL = 0.95
-_CONFIDENCE_Z = NormalDist().inv_cdf(_CONFIDENCE_LEVEL)
 
 
 @dataclass
@@ -190,26 +187,24 @@ def _write_gene_taxonomy(
                 )
 
 
-def _wilson_lower_bound(successes: int, total: int) -> float:
-    """Lower bound of the one-sided Wilson interval for a share of votes.
-
-    Shrinks the observed share towards zero by an amount that grows as the
-    number of votes shrinks, so a unanimous pair of clusters cannot carry the
-    same weight as a solid majority of hundreds.
-    """
-    share = successes / total
-    z_squared = _CONFIDENCE_Z**2
-    center = share + z_squared / (2 * total)
-    margin = _CONFIDENCE_Z * math.sqrt(
-        (share * (1 - share) + z_squared / (4 * total)) / total
+def _minimum_aligned_clusters(
+    length: int,
+    minimum: int,
+    support_length: int,
+    clusters_per_decade: int,
+) -> int:
+    """Sequence-level evidence floor, increasing logarithmically above the anchor."""
+    if length <= support_length:
+        return minimum
+    return minimum + math.ceil(
+        clusters_per_decade * math.log10(length / support_length)
     )
-    return (center - margin) / (1 + z_squared / total)
 
 
 def _majority_taxon(
     votes: Counter[str], total: int, alpha: float
-) -> tuple[str, bool]:
-    """Return the alpha-majority taxon and whether too few votes rejected it."""
+) -> str:
+    """Return the unique taxon whose observed vote share reaches alpha."""
     winner = _MISSING_TAXON
     highest_count = 0
     tied = False
@@ -223,10 +218,8 @@ def _majority_taxon(
         elif count == highest_count:
             tied = True
     if tied or highest_count / total < alpha:
-        return _MISSING_TAXON, False
-    if _wilson_lower_bound(highest_count, total) < alpha:
-        return _MISSING_TAXON, True
-    return winner, False
+        return _MISSING_TAXON
+    return winner
 
 
 def assign_taxonomy(
@@ -237,11 +230,21 @@ def assign_taxonomy(
     reasons_destination: Path,
     gene_taxonomy_destination: Path,
     alpha: float = 0.5,
+    *,
+    min_aligned_clusters: int = 3,
+    cluster_support_length: int = 50_000,
+    clusters_per_decade: int = 3,
 ) -> None:
     if not 0 < alpha <= 1:
         raise ValueError(
             "The alpha-majority threshold must be greater than 0 and at most 1."
         )
+    if min_aligned_clusters < 3:
+        raise ValueError("The minimum aligned cluster count must be at least 3.")
+    if cluster_support_length < 1:
+        raise ValueError("The cluster support length must be at least 1 bp.")
+    if clusters_per_decade < 1:
+        raise ValueError("The cluster count increase per decade must be at least 1.")
 
     sequences = _assembly_sequences(assembly)
     sequence_ids = list(sequences)
@@ -283,31 +286,33 @@ def assign_taxonomy(
         reasons_handle.write(f"sequence_name\t{_REASON_COLUMN}\n")
         for sequence_id in sequence_ids:
             total = assignment_counts[sequence_id]
+            sequence = sequences[sequence_id]
             reason = _NO_REASON
-            if total == 0:
-                lineage = [_MISSING_TAXON] * len(TAXONOMIC_RANKS)
-            else:
+            lineage = [_MISSING_TAXON] * len(TAXONOMIC_RANKS)
+            if total:
                 votes_by_rank = rank_votes[sequence_id]
-                majorities = [
-                    _majority_taxon(votes, total, alpha) for votes in votes_by_rank
-                ]
-                lineage = [taxon for taxon, _ in majorities]
                 has_taxonomic_evidence = any(
                     taxon != _MISSING_TAXON
                     for votes in votes_by_rank
                     for taxon in votes
                 )
-                if has_taxonomic_evidence and all(
-                    taxon == _MISSING_TAXON for taxon in lineage
-                ):
-                    reason = (
-                        _LOW_CONFIDENCE_REASON
-                        if any(rejected for _, rejected in majorities)
-                        else _NO_CONSENSUS_REASON
-                    )
+                if has_taxonomic_evidence:
+                    if total < _minimum_aligned_clusters(
+                        sequence.length,
+                        min_aligned_clusters,
+                        cluster_support_length,
+                        clusters_per_decade,
+                    ):
+                        reason = _INSUFFICIENT_SUPPORT_REASON
+                    else:
+                        lineage = [
+                            _majority_taxon(votes, total, alpha)
+                            for votes in votes_by_rank
+                        ]
+                        if all(taxon == _MISSING_TAXON for taxon in lineage):
+                            reason = _NO_CONSENSUS_REASON
             if any(taxon != _MISSING_TAXON for taxon in lineage):
                 assigned_sequences += 1
-            sequence = sequences[sequence_id]
             gc_percent = (
                 100 * sequence.gc_bases / sequence.length if sequence.length else 0
             )
@@ -338,6 +343,9 @@ if "snakemake" in globals():
                     Path(workflow.output.reasons),
                     Path(workflow.output.gene_taxonomy),
                     float(workflow.params.alpha),
+                    min_aligned_clusters=int(workflow.params.min_aligned_clusters),
+                    cluster_support_length=int(workflow.params.cluster_support_length),
+                    clusters_per_decade=int(workflow.params.clusters_per_decade),
                 )
             except Exception:
                 traceback.print_exc()

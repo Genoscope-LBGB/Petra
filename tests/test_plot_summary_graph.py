@@ -65,7 +65,7 @@ def _taxonomy(directory: Path) -> Path:
                 _row("contig-1", 30_000_000, 42.0, 46, 259, _ACTINOPTERI),
                 _row("contig-2", 68_000, 49.8, 8, 12, {"domain": "Eukaryota", "kingdom": "Metazoa"}),
                 _row("contig-3", 21_000, 46.0, 2, 17, {}, "no_consensus"),
-                _row("contig-4", 19_500, 54.7, 59, 3, {}, "low_confidence"),
+                _row("contig-4", 19_500, 54.7, 59, 2, {}, "insufficient_support"),
                 _row("contig-5", 13_100, 50.7, 127, 0, {}),
                 "",
             )

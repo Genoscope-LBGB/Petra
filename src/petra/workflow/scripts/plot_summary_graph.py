@@ -26,7 +26,7 @@ from matplotlib.ticker import FuncFormatter, NullFormatter  # noqa: E402
 from assign_taxonomy import TAXONOMIC_RANKS  # noqa: E402
 
 _MISSING_TAXON = "N/A"
-_LOW_CONFIDENCE_REASON = "low_confidence"
+_INSUFFICIENT_SUPPORT_REASON = "insufficient_support"
 _NO_CONSENSUS_REASON = "no_consensus"
 _WHOKARYOTE_REASON = "whokaryote"
 _METADATA_COLUMNS = (
@@ -73,7 +73,7 @@ _FILL_ALPHA = 0.75
 _ASSIGNED_STATUS = "assigned"
 _STATUS_COLORS = {
     _ASSIGNED_STATUS: "#2166AC",
-    "low confidence": "#8AB8D8",
+    "insufficient support": "#8AB8D8",
     "no consensus": "#FDB863",
     "whokaryote veto": "#B79ACC",
     "no protein evidence": "#D9D9D9",
@@ -272,8 +272,8 @@ def _palette(
 def _status_of(sequence: AssemblySequence) -> str:
     if sequence.assigned:
         return _ASSIGNED_STATUS
-    if sequence.reason == _LOW_CONFIDENCE_REASON:
-        return "low confidence"
+    if sequence.reason == _INSUFFICIENT_SUPPORT_REASON:
+        return "insufficient support"
     if sequence.reason == _NO_CONSENSUS_REASON:
         return "no consensus"
     if sequence.reason == _WHOKARYOTE_REASON:

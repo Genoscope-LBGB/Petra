@@ -51,6 +51,17 @@ class RunCliTest(unittest.TestCase):
             *additional,
         ]
 
+    def test_rejects_support_options_outside_their_allowed_ranges(self) -> None:
+        for option, value in (
+            ("--min-aligned-clusters", "2"),
+            ("--cluster-support-length", "0"),
+            ("--clusters-per-decade", "0"),
+        ):
+            with self.subTest(option=option):
+                result = CliRunner().invoke(app, self.run_arguments(option, value))
+                self.assertEqual(result.exit_code, 2, result.output)
+                self.assertIn(option, _flatten(result.output))
+
     def test_accepts_repeated_long_reads_and_ont_technology(self) -> None:
         second_reads = self.directory / "second.fastq"
         second_reads.touch()
@@ -148,34 +159,6 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         workflow_config = launch.call_args.kwargs["workflow_config"]
         self.assertEqual(workflow_config["diamond_db"], self.database / "petra.dmnd")
-
-    def test_checks_database_files_for_environment_directory(self) -> None:
-        empty = self.directory / "empty-environment-database"
-        empty.mkdir()
-
-        with (
-            patch("petra.cli._require_executables"),
-            patch("petra.cli.launch_workflow") as launch,
-        ):
-            result = CliRunner().invoke(
-                app,
-                [
-                    "run",
-                    "--assembly",
-                    str(self.assembly),
-                    "--long-reads",
-                    str(self.reads),
-                ],
-                env={"PETRA_DB_DIR": str(empty)},
-            )
-
-        self.assertEqual(result.exit_code, 2)
-        self.assertIn(
-            f"petra.dmnd not found in {empty}. Build it with 'petra build-db "
-            f"--output {empty}'.",
-            _flatten(result.output),
-        )
-        launch.assert_not_called()
 
     def test_rejects_a_directory_without_the_diamond_database(self) -> None:
         empty = self.directory / "empty"

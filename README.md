@@ -77,6 +77,37 @@ export PETRA_DB_DIR=/path/to/database
 petra run --assembly assembly.fasta --long-reads reads.fastq.gz --output run-1
 ```
 
+#### Taxonomic assignment
+
+PETRA first checks the number of aligned protein clusters against a
+length-dependent minimum, once for the whole sequence. With the defaults,
+sequences up to 50,000 bp require three aligned clusters. Above that length,
+the minimum is `3 + ceil(3 * log10(sequence_length / 50000))`:
+
+| Sequence length | Minimum aligned clusters |
+| --- | --- |
+| Up to 50 kb | 3 |
+| 100 kb | 4 |
+| 500 kb | 6 |
+| 5 Mb | 9 |
+| 50 Mb | 12 |
+
+Configure the curve with:
+- `--min-aligned-clusters` (default `3`, minimum `3`): the minimum at or below
+  the length anchor.
+- `--cluster-support-length` (default `50000`, minimum `1`): the anchor in bp.
+- `--clusters-per-decade` (default `3`, minimum `1`): additional clusters per
+  tenfold increase above the anchor.
+
+Sequences with taxonomic evidence below this minimum have all ranks set to
+`N/A` and `unassigned_reason` set to `insufficient_support`. Their gene-level
+evidence remains in `predictions.gene_taxonomy.tsv`.
+
+Sequences passing the gate use the ordinary observed `--alpha` majority
+(default `0.5`), with all aligned clusters in the denominator. If no rank
+reaches a unique alpha majority despite taxonomic evidence, the reason is
+`no_consensus`.
+
 #### Optional rRNA and tRNA analyses
 
 Add `--rrna` to detect rRNA genes with `cmscan` and classify SSU and LSU genes

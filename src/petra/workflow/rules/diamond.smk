@@ -65,10 +65,8 @@ rule replace_taxids_with_lineages:
 
 rule assign_taxonomy:
     """
-    Assign each assembly sequence by alpha-majority of its protein assignments.
-    A rank stays unassigned unless its majority also holds at the lower bound of
-    its confidence interval, so sequences supported by few aligned clusters are
-    left unassigned rather than assigned from thin evidence.
+    Require length-dependent cluster support once per sequence, then assign its
+    taxonomy by the observed alpha-majority of its aligned clusters.
     """
     input:
         assembly=config["assembly"],
@@ -84,5 +82,8 @@ rule assign_taxonomy:
         "benchmarks/assign_taxonomy.tsv"
     params:
         alpha=config["alpha"],
+        min_aligned_clusters=config["min_aligned_clusters"],
+        cluster_support_length=config["cluster_support_length"],
+        clusters_per_decade=config["clusters_per_decade"],
     script:
         "../scripts/assign_taxonomy.py"
