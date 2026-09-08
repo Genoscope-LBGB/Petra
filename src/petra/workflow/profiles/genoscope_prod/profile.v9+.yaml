@@ -2,6 +2,13 @@ executor: slurm
 jobs: 100
 cores: 4000
 
+default-resources:
+  mem_mb_per_cpu: 10000
+  runtime: 7200
+  qos: ngs
+  slurm_partition: normal
+  threads: 1
+
 set-threads:
   pyrodigal: 12
   cdhit: 12
@@ -17,80 +24,90 @@ set-threads:
 
 set-resources:
   minimap2:
-    runtime: 1440
     mem_mb: 240000
   bedtools_genomecov:
-    runtime: 1440
-    mem_mb: 10000
+    mem_mb: 20000
   median_coverage:
-    runtime: 1440
-    mem_mb: 10000
+    mem_mb: 20000
   pyrodigal:
-    runtime: 720
+    runtime: 960
     mem_mb: 128000
+    qos: quickngs
   segmasker:
+    runtime: 960
+    mem_mb: 10000
+    qos: quickngs
+  filter_low_complexity:
     runtime: 240
     mem_mb: 10000
-  filter_low_complexity:
-    runtime: 60
-    mem_mb: 10000
+    qos: quickngs
   cdhit:
-    runtime: 720
+    runtime: 960
     mem_mb: 24000
+    qos: quickngs
   diamond:
-    runtime: 1440
     mem_mb: 128000
   filter_overrepresented_targets:
-    runtime: 60
-    mem_mb: 10000
+    runtime: 240
+    mem_mb: 20000
+    qos: quickngs
   replace_taxids_with_lineages:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   assign_taxonomy:
-    runtime: 60
-    mem_mb: 10000
+    runtime: 240
+    mem_mb: 20000
+    qos: quickngs
   whokaryote:
-    runtime: 720
+    runtime: 960
     mem_mb: 32000
+    qos: quickngs
   extract_organelles:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   control_taxonomy_with_whokaryote:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   split_assembly_by_domain:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   split_assembly_for_cmscan:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   cmscan:
-    runtime: 720
     mem_mb: 32000
   merge_cmscan_tblout:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   extract_rrna_genes:
-    runtime: 60
+    runtime: 240
     mem_mb: 20000
+    qos: quickngs
   blastn_ssu:
-    runtime: 720
     mem_mb: 32000
   blastn_lsu:
-    runtime: 720
     mem_mb: 32000
   select_rrna_best_hits:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   replace_rrna_taxids_with_lineages:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   summarize_rrna_hits:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
   trnascan:
-    runtime: 720
     mem_mb: 64000
   filter_trna_predictions:
-    runtime: 60
+    runtime: 240
     mem_mb: 10000
+    qos: quickngs
