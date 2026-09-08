@@ -1,0 +1,102 @@
+executor: slurm
+jobs: 100
+cores: 4000
+
+default-resources:
+  mem_mb_per_cpu: 10000
+  runtime: 4320
+  slurm_partition: normal
+  threads: 1
+
+set-threads:
+  pyrodigal: 12
+  cdhit: 12
+  diamond: 24
+  replace_taxids_with_lineages: 4
+  whokaryote: 12
+  minimap2: 24
+  cmscan: 8
+  blastn_ssu: 12
+  blastn_lsu: 12
+  replace_rrna_taxids_with_lineages: 4
+  trnascan: 10
+
+set-resources:
+  minimap2:
+    mem_mb: 360000
+    qos: long
+  bedtools_genomecov:
+    mem_mb: 20000
+    qos: long
+  median_coverage:
+    mem_mb: 20000
+    qos: long
+  pyrodigal:
+    runtime: 1440
+    mem_mb: 128000
+  segmasker:
+    runtime: 1440
+    mem_mb: 10000
+  filter_low_complexity:
+    runtime: 240
+    mem_mb: 10000
+  cdhit:
+    runtime: 1440
+    mem_mb: 24000
+  diamond:
+    mem_mb: 128000
+    qos: long
+  filter_overrepresented_targets:
+    runtime: 240
+    mem_mb: 20000
+  replace_taxids_with_lineages:
+    runtime: 240
+    mem_mb: 10000
+  assign_taxonomy:
+    runtime: 240
+    mem_mb: 20000
+  whokaryote:
+    runtime: 1440
+    mem_mb: 32000
+  extract_organelles:
+    runtime: 240
+    mem_mb: 10000
+  control_taxonomy_with_whokaryote:
+    runtime: 240
+    mem_mb: 10000
+  split_assembly_by_domain:
+    runtime: 240
+    mem_mb: 10000
+  split_assembly_for_cmscan:
+    runtime: 240
+    mem_mb: 10000
+  cmscan:
+    runtime: 1440
+    mem_mb: 32000
+  merge_cmscan_tblout:
+    runtime: 240
+    mem_mb: 10000
+  extract_rrna_genes:
+    runtime: 240
+    mem_mb: 20000
+  blastn_ssu:
+    mem_mb: 32000
+    qos: long
+  blastn_lsu:
+    mem_mb: 32000
+    qos: long
+  select_rrna_best_hits:
+    runtime: 240
+    mem_mb: 10000
+  replace_rrna_taxids_with_lineages:
+    runtime: 240
+    mem_mb: 10000
+  summarize_rrna_hits:
+    runtime: 240
+    mem_mb: 10000
+  trnascan:
+    runtime: 1440
+    mem_mb: 64000
+  filter_trna_predictions:
+    runtime: 240
+    mem_mb: 10000
