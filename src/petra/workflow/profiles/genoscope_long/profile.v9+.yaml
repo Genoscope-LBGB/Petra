@@ -58,6 +58,9 @@ set-resources:
   whokaryote:
     runtime: 1440
     mem_mb: 32000
+  aggregate_taxonomy:
+    runtime: 240
+    mem_mb: 10000
   extract_organelles:
     runtime: 240
     mem_mb: 10000
@@ -100,3 +103,7 @@ set-resources:
   filter_trna_predictions:
     runtime: 240
     mem_mb: 10000
+  plot_summary_graph:
+    runtime: 240
+    mem_mb: 20000
+    qos: quickngs

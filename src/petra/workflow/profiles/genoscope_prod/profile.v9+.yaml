@@ -63,6 +63,10 @@ set-resources:
     runtime: 960
     mem_mb: 32000
     qos: quickngs
+  aggregate_taxonomy:
+    runtime: 240
+    mem_mb: 10000
+    qos: quickngs
   extract_organelles:
     runtime: 240
     mem_mb: 10000
@@ -104,6 +108,10 @@ set-resources:
   summarize_rrna_hits:
     runtime: 240
     mem_mb: 10000
+    qos: quickngs
+  plot_summary_graph:
+    runtime: 240
+    mem_mb: 20000
     qos: quickngs
   trnascan:
     mem_mb: 64000
