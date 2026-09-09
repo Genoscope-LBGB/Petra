@@ -30,11 +30,11 @@ set-resources:
   median_coverage:
     mem_mb: 20000
   pyrodigal:
-    runtime: 960
+    runtime: 840
     mem_mb: 128000
     qos: quickngs
   segmasker:
-    runtime: 960
+    runtime: 840
     mem_mb: 10000
     qos: quickngs
   filter_low_complexity:
@@ -42,7 +42,7 @@ set-resources:
     mem_mb: 10000
     qos: quickngs
   cdhit:
-    runtime: 960
+    runtime: 840
     mem_mb: 24000
     qos: quickngs
   diamond:
@@ -60,7 +60,7 @@ set-resources:
     mem_mb: 20000
     qos: quickngs
   whokaryote:
-    runtime: 960
+    runtime: 840
     mem_mb: 32000
     qos: quickngs
   aggregate_taxonomy:
