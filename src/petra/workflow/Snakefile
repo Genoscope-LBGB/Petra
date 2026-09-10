@@ -24,7 +24,13 @@ if not config["skip_taxonomic_assignment"]:
         ]
     )
 if config["rrna"]:
-    _ALL_TARGETS.extend(["rna/predictions.rrna.gff", "rna/predictions.rrna.tsv"])
+    _ALL_TARGETS.extend(
+        [
+            "rna/predictions.rrna.gff",
+            "rna/predictions.rrna.tsv",
+            "rna/predictions.rrna.warnings.txt",
+        ]
+    )
 if config["trna"]:
     _ALL_TARGETS.extend(["rna/predictions.trna.tsv", "rna/predictions.trna.stats"])
 

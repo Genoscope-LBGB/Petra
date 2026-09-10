@@ -163,11 +163,13 @@ rule summarize_rrna_hits:
         lineages="rna/predictions.rrna.lineages.tsv",
     output:
         taxonomy="rna/predictions.rrna.tsv",
+        warnings="rna/predictions.rrna.warnings.txt",
     log:
         "logs/summarize_rrna_hits.log",
     benchmark:
         "benchmarks/summarize_rrna_hits.tsv"
     params:
+        host_taxon=config["host_taxon"],
         host_phylum=config["host_phylum"],
     script:
         "../scripts/summarize_rrna_hits.py"

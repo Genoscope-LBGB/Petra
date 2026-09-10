@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 _MISSING_PHYLUM = "N/A"
+_MISSING_TAXID = "UNKNOWN_TAXID"
 _PHYLUM_ARGUMENTS = [
     "reformat2",
     "--taxid-field",
@@ -13,7 +14,7 @@ _PHYLUM_ARGUMENTS = [
     "--miss-rank-repl",
     _MISSING_PHYLUM,
     "--miss-taxid-repl",
-    _MISSING_PHYLUM,
+    _MISSING_TAXID,
 ]
 
 
@@ -26,8 +27,8 @@ def resolve_host_phylum(
     *,
     taxonomy: Path,
     taxonkit_executable: str = "taxonkit",
-) -> str:
-    """Resolve a user-facing host identifier to its NCBI phylum name.
+) -> str | None:
+    """Resolve a host identifier to its NCBI phylum, or None if it has none.
 
     A TaxID costs one taxonkit call; a scientific name costs one additional
     call to resolve the name to a TaxID.
@@ -58,8 +59,10 @@ def resolve_host_phylum(
             f"{taxid}; expected TaxID and phylum."
         )
     phylum = fields[1].strip()
+    if phylum == _MISSING_TAXID:
+        raise HostTaxonError(f"TaxID {taxid} is not in the NCBI taxonomy.")
     if not phylum or phylum == _MISSING_PHYLUM:
-        raise HostTaxonError(f"TaxID {taxid} has no phylum in the NCBI taxonomy.")
+        return None
     return phylum
 
 

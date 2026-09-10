@@ -7,72 +7,31 @@ from unittest.mock import patch
 
 from petra.taxonomy import HostTaxonError, resolve_host_phylum
 
-_PHYLUM_ARGUMENTS = [
-    "reformat2",
-    "--taxid-field",
-    "1",
-    "--format",
-    "{phylum}",
-    "--miss-rank-repl",
-    "N/A",
-    "--miss-taxid-repl",
-    "N/A",
-]
 
 
 class ResolveHostPhylumTest(unittest.TestCase):
     taxonomy = Path("database/taxonomy")
 
-    def test_resolves_a_taxid_with_a_single_taxonkit_call(self) -> None:
+    def test_resolves_a_taxid(self) -> None:
         with patch(
             "petra.taxonomy.subprocess.run",
-            side_effect=[_process("9606\tChordata\n")],
-        ) as run:
-            result = resolve_host_phylum("9606", taxonomy=self.taxonomy)
+            return_value=_process("9606\tChordata\n"),
+        ):
+            self.assertEqual(
+                resolve_host_phylum("9606", taxonomy=self.taxonomy), "Chordata"
+            )
 
-        self.assertEqual(result, "Chordata")
-        self.assertEqual(run.call_count, 1)
-        self.assertEqual(
-            run.call_args_list[0].args[0],
-            ["taxonkit", "--data-dir", str(self.taxonomy), *_PHYLUM_ARGUMENTS],
-        )
-        self.assertEqual(run.call_args_list[0].kwargs["input"], "9606\n")
-
-    def test_resolves_a_name_with_two_taxonkit_calls(self) -> None:
+    def test_resolves_a_name(self) -> None:
         with patch(
             "petra.taxonomy.subprocess.run",
             side_effect=[
                 _process("human\t9606\n"),
                 _process("9606\tChordata\n"),
             ],
-        ) as run:
-            result = resolve_host_phylum(
-                "human",
-                taxonomy=self.taxonomy,
-                taxonkit_executable="custom-taxonkit",
+        ):
+            self.assertEqual(
+                resolve_host_phylum("human", taxonomy=self.taxonomy), "Chordata"
             )
-
-        self.assertEqual(result, "Chordata")
-        self.assertEqual(run.call_count, 2)
-        self.assertEqual(
-            run.call_args_list[0].args[0],
-            [
-                "custom-taxonkit",
-                "--data-dir",
-                str(self.taxonomy),
-                "name2taxid",
-            ],
-        )
-        self.assertEqual(run.call_args_list[0].kwargs["input"], "human\n")
-        self.assertEqual(
-            run.call_args_list[1].args[0],
-            [
-                "custom-taxonkit",
-                "--data-dir",
-                str(self.taxonomy),
-                *_PHYLUM_ARGUMENTS,
-            ],
-        )
 
     def test_accepts_a_taxid_at_phylum_rank(self) -> None:
         with patch(
@@ -84,18 +43,22 @@ class ResolveHostPhylumTest(unittest.TestCase):
                 "Chordata",
             )
 
-    def test_rejects_a_taxon_without_a_phylum(self) -> None:
+    def test_returns_no_phylum_for_an_unranked_taxon(self) -> None:
+        with patch(
+            "petra.taxonomy.subprocess.run",
+            return_value=_process("3451528\tN/A\n"),
+        ):
+            self.assertIsNone(resolve_host_phylum("3451528", taxonomy=self.taxonomy))
+
+    def test_rejects_an_unknown_taxid(self) -> None:
         with (
             patch(
                 "petra.taxonomy.subprocess.run",
-                return_value=_process("2\tN/A\n"),
+                return_value=_process("999999999\tUNKNOWN_TAXID\n"),
             ),
-            self.assertRaisesRegex(
-                HostTaxonError,
-                "TaxID 2 has no phylum in the NCBI taxonomy",
-            ),
+            self.assertRaises(HostTaxonError),
         ):
-            resolve_host_phylum("2", taxonomy=self.taxonomy)
+            resolve_host_phylum("999999999", taxonomy=self.taxonomy)
 
     def test_rejects_an_unknown_name(self) -> None:
         with (

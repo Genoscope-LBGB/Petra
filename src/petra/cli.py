@@ -327,7 +327,9 @@ def run(
             "--host-taxon",
             help=(
                 "Expected host taxon, as an NCBI scientific name or TaxID. PETRA "
-                "resolves its phylum and flags rRNA hits outside that phylum."
+                "resolves its phylum and flags rRNA hits outside that phylum. "
+                "If no phylum is available, reports non_host=- and writes "
+                "rna/predictions.rrna.warnings.txt."
             ),
             rich_help_panel="rRNA detection",
         ),
@@ -513,6 +515,7 @@ def run(
             "skip_taxonomic_assignment": skip_taxonomic_assignment,
             "rrna_chunks": _RRNA_CHUNKS,
             "rrna_min_alignment_length": rrna_min_alignment_length,
+            "host_taxon": host_taxon,
             "host_phylum": host_phylum,
             "covariance_model": database_path / COVARIANCE_MODEL_FILENAME,
             "clan_info": database_path / CLAN_INFO_FILENAME,

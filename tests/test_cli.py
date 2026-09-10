@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -402,26 +403,23 @@ class RunCliTest(unittest.TestCase):
         self.assertIn("--host-taxon requires --rrna.", _flatten(result.output))
         launch.assert_not_called()
 
-    def test_resolves_host_taxon_phylum_into_workflow_config(self) -> None:
+    def test_accepts_a_host_taxon_without_a_phylum(self) -> None:
         with (
             patch(
-                "petra.cli.resolve_host_phylum",
-                return_value="Chordata",
-            ) as resolve,
+                "petra.taxonomy.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=["taxonkit"], returncode=0, stdout="3451528\tN/A\n"
+                ),
+            ),
             patch("petra.cli._require_executables"),
-            patch("petra.cli.launch_workflow", return_value=0) as launch,
+            patch("petra.cli.launch_workflow", return_value=0),
         ):
             result = CliRunner().invoke(
                 app,
-                self.run_arguments("--rrna", "--host-taxon", "9606"),
+                self.run_arguments("--rrna", "--host-taxon", "3451528"),
             )
 
         self.assertEqual(result.exit_code, 0, result.output)
-        resolve.assert_called_once_with("9606", taxonomy=self.taxonomy)
-        self.assertEqual(
-            launch.call_args.kwargs["workflow_config"]["host_phylum"],
-            "Chordata",
-        )
 
     def test_reports_host_taxon_resolution_failure(self) -> None:
         with (

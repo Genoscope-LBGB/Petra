@@ -118,11 +118,17 @@ and produces these files under the output directory's `rna/` subdirectory:
   5.8S.
 - `rna/predictions.rrna.tsv`, the best BLAST hit per SSU or LSU gene, with a
   pipe-joined lineage and a `non_host` column.
+- `rna/predictions.rrna.warnings.txt`, host-classification warnings, empty when
+  there are none.
 
 `--host-taxon` accepts an NCBI scientific name or TaxID. PETRA resolves the
 taxon to its NCBI phylum and matches that phylum as a whole lineage field.
-Without a host, `non_host` is `-`. A hit whose lineage does not resolve to the
-host phylum is reported as non-host. Use `--rrna-min-alignment-length` to change
+Without a host, `non_host` is `-`. If the host has no phylum, the analysis
+continues with `non_host=-` for all hits and records a warning identifying the
+host in `rna/predictions.rrna.warnings.txt`. This file is regenerated on reruns.
+Unknown or ambiguous host identifiers and TaxonKit failures still stop the run.
+When a host phylum is available, a hit whose lineage does not resolve to that
+phylum is reported as non-host. Use `--rrna-min-alignment-length` to change
 the minimum reported BLAST alignment length from its default of 200.
 
 Add `--trna` to annotate tRNAs. It requires `tRNAscan-SE` on `PATH` and writes

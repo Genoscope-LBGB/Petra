@@ -120,6 +120,7 @@ class WorkflowDagTest(unittest.TestCase):
             "skip_taxonomic_assignment": skip_taxonomic_assignment,
             "rrna_chunks": 16,
             "rrna_min_alignment_length": 200,
+            "host_taxon": None,
             "host_phylum": None,
             "covariance_model": str(self.covariance_model),
             "clan_info": str(self.clan_info),

@@ -42,7 +42,9 @@ def _non_host(ranks: list[str], host_phylum: str | None) -> str:
 def summarize_rrna_hits(
     lineages: Path,
     destination: Path,
+    warnings: Path,
     *,
+    host_taxon: str | None,
     host_phylum: str | None,
 ) -> None:
     rows: list[tuple[tuple[str, int, int, str], list[str]]] = []
@@ -92,10 +94,19 @@ def summarize_rrna_hits(
         for _, row in rows:
             output_handle.write("\t".join(row) + "\n")
 
+    warning = ""
+    if host_taxon is not None and host_phylum is None:
+        warning = (
+            f"Warning: Host taxon {host_taxon!r} has no phylum in the NCBI taxonomy. "
+            "Host/non-host classification is unavailable; non_host=- for all "
+            "reported rRNA hits.\n"
+        )
+    warnings.write_text(warning, encoding="utf-8")
+
     if not rows:
         print("No SSU or LSU gene received a BLAST hit; wrote the header only.")
     elif host_phylum is None:
-        print(f"Reported {len(rows)} classified rRNA genes, no host taxon given.")
+        print(f"Reported {len(rows)} classified rRNA genes, no host phylum available.")
     else:
         print(
             f"Reported {len(rows)} classified rRNA genes, {non_host_count} of them "
@@ -115,6 +126,8 @@ if "snakemake" in globals():
             summarize_rrna_hits(
                 Path(workflow.input.lineages),
                 Path(workflow.output.taxonomy),
+                Path(workflow.output.warnings),
+                host_taxon=workflow.params.host_taxon,
                 host_phylum=workflow.params.host_phylum,
             )
         except Exception:
