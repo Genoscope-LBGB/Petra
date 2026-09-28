@@ -94,15 +94,15 @@ def _assembly_sequences(source: Path) -> dict[str, AssemblySequence]:
     return sequences
 
 
-def _clustered_proteins(source: Path, assembly_ids: set[str]) -> dict[str, str]:
+def _unigene_proteins(source: Path, assembly_ids: set[str]) -> dict[str, str]:
     protein_sequences: dict[str, str] = {}
     for protein_id in _fasta_identifiers(source):
         if protein_id in protein_sequences:
-            raise ValueError(f"Duplicate clustered protein identifier: {protein_id!r}.")
+            raise ValueError(f"Duplicate unigene protein identifier: {protein_id!r}.")
         sequence_id = _assembly_sequence_id(protein_id)
         if sequence_id not in assembly_ids:
             raise ValueError(
-                f"Clustered protein {protein_id!r} belongs to unknown assembly "
+                f"Unigene protein {protein_id!r} belongs to unknown assembly "
                 f"sequence {sequence_id!r}."
             )
         protein_sequences[protein_id] = sequence_id
@@ -125,7 +125,7 @@ def _alignment_assignments(
             if protein_id not in protein_sequences:
                 raise ValueError(
                     f"Lineage alignment at line {line_number} refers to unknown "
-                    f"clustered protein {protein_id!r}."
+                    f"unigene protein {protein_id!r}."
                 )
             try:
                 bitscore = float(columns[3])
@@ -187,17 +187,17 @@ def _write_gene_taxonomy(
                 )
 
 
-def _minimum_aligned_clusters(
+def _minimum_aligned_unigenes(
     length: int,
     minimum: int,
     support_length: int,
-    clusters_per_decade: int,
+    unigenes_per_decade: int,
 ) -> int:
     """Sequence-level evidence floor, increasing logarithmically above the anchor."""
     if length <= support_length:
         return minimum
     return minimum + math.ceil(
-        clusters_per_decade * math.log10(length / support_length)
+        unigenes_per_decade * math.log10(length / support_length)
     )
 
 
@@ -231,24 +231,24 @@ def assign_taxonomy(
     gene_taxonomy_destination: Path,
     alpha: float = 0.5,
     *,
-    min_aligned_clusters: int = 3,
-    cluster_support_length: int = 50_000,
-    clusters_per_decade: int = 3,
+    min_aligned_unigenes: int = 3,
+    unigene_support_length: int = 50_000,
+    unigenes_per_decade: int = 3,
 ) -> None:
     if not 0 < alpha <= 1:
         raise ValueError(
             "The alpha-majority threshold must be greater than 0 and at most 1."
         )
-    if min_aligned_clusters < 3:
-        raise ValueError("The minimum aligned cluster count must be at least 3.")
-    if cluster_support_length < 1:
-        raise ValueError("The cluster support length must be at least 1 bp.")
-    if clusters_per_decade < 1:
-        raise ValueError("The cluster count increase per decade must be at least 1.")
+    if min_aligned_unigenes < 3:
+        raise ValueError("The minimum aligned unigene count must be at least 3.")
+    if unigene_support_length < 1:
+        raise ValueError("The unigene support length must be at least 1 bp.")
+    if unigenes_per_decade < 1:
+        raise ValueError("The unigene count increase per decade must be at least 1.")
 
     sequences = _assembly_sequences(assembly)
     sequence_ids = list(sequences)
-    protein_sequences = _clustered_proteins(proteins, set(sequences))
+    protein_sequences = _unigene_proteins(proteins, set(sequences))
     protein_assignments = _alignment_assignments(alignment, protein_sequences)
     protein_lineages = {
         protein_id: _protein_lineage(assignment)
@@ -279,7 +279,7 @@ def assign_taxonomy(
     ):
         output_handle.write(
             "sequence_name\tsequence_length\tgc_percent\t"
-            "number_of_aligned_clusters\t"
+            "number_of_aligned_unigenes\t"
             + "\t".join(TAXONOMIC_RANKS)
             + "\n"
         )
@@ -297,11 +297,11 @@ def assign_taxonomy(
                     for taxon in votes
                 )
                 if has_taxonomic_evidence:
-                    if total < _minimum_aligned_clusters(
+                    if total < _minimum_aligned_unigenes(
                         sequence.length,
-                        min_aligned_clusters,
-                        cluster_support_length,
-                        clusters_per_decade,
+                        min_aligned_unigenes,
+                        unigene_support_length,
+                        unigenes_per_decade,
                     ):
                         reason = _INSUFFICIENT_SUPPORT_REASON
                     else:
@@ -325,7 +325,7 @@ def assign_taxonomy(
 
     print(
         f"Assigned taxonomy to {assigned_sequences} of {len(sequence_ids)} assembly "
-        f"sequences from {len(protein_assignments)} aligned clusters."
+        f"sequences from {len(protein_assignments)} aligned unigenes."
     )
 
 
@@ -343,9 +343,9 @@ if "snakemake" in globals():
                     Path(workflow.output.reasons),
                     Path(workflow.output.gene_taxonomy),
                     float(workflow.params.alpha),
-                    min_aligned_clusters=int(workflow.params.min_aligned_clusters),
-                    cluster_support_length=int(workflow.params.cluster_support_length),
-                    clusters_per_decade=int(workflow.params.clusters_per_decade),
+                    min_aligned_unigenes=int(workflow.params.min_aligned_unigenes),
+                    unigene_support_length=int(workflow.params.unigene_support_length),
+                    unigenes_per_decade=int(workflow.params.unigenes_per_decade),
                 )
             except Exception:
                 traceback.print_exc()

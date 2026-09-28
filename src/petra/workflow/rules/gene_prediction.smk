@@ -54,7 +54,7 @@ rule filter_low_complexity:
 rule cdhit:
     """
     Cluster proteins independently within each originating assembly sequence and
-    output at most ``max_clusters`` per assembly sequence.
+    output at most ``max_unigenes_per_sequence`` unigenes per assembly sequence.
 
     """
     input:
@@ -66,6 +66,6 @@ rule cdhit:
     benchmark:
         "benchmarks/cdhit.tsv"
     params:
-        maximum=config["max_clusters_per_sequence"],
+        maximum=config["max_unigenes_per_sequence"],
     script:
         "../scripts/cluster_proteins.py"

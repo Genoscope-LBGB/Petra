@@ -11,7 +11,7 @@ sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 
 from assign_taxonomy import (  # noqa: E402
     TAXONOMIC_RANKS,
-    _minimum_aligned_clusters,
+    _minimum_aligned_unigenes,
     assign_taxonomy,
 )
 
@@ -35,7 +35,7 @@ class AssignTaxonomyTest(unittest.TestCase):
                 "sequence_name",
                 "sequence_length",
                 "gc_percent",
-                "number_of_aligned_clusters",
+                "number_of_aligned_unigenes",
                 *TAXONOMIC_RANKS,
             ],
         )
@@ -62,12 +62,12 @@ class AssignTaxonomyTest(unittest.TestCase):
             (50_001, 3, "N/A", "insufficient_support"),
             (50_001, 4, "Bacteria", "-"),
         )
-        for length, clusters, domain, reason in cases:
-            with self.subTest(length=length, clusters=clusters):
+        for length, unigenes, domain, reason in cases:
+            with self.subTest(length=length, unigenes=unigenes):
                 rows, reasons = self._assign(
                     {"contig": length},
-                    self._protein_ids("contig", clusters),
-                    self._hits("contig", [bacteria] * clusters),
+                    self._protein_ids("contig", unigenes),
+                    self._hits("contig", [bacteria] * unigenes),
                 )
                 self.assertEqual(rows[1][_DOMAIN_COLUMN], domain)
                 self.assertEqual(reasons[1], ["contig", reason])
@@ -89,10 +89,10 @@ class AssignTaxonomyTest(unittest.TestCase):
         for length, minimum in cases:
             with self.subTest(length=length):
                 self.assertEqual(
-                    _minimum_aligned_clusters(length, 3, 50_000, 3), minimum
+                    _minimum_aligned_unigenes(length, 3, 50_000, 3), minimum
                 )
 
-    def test_support_counts_aligned_clusters_not_predictions_or_hits(self) -> None:
+    def test_support_counts_aligned_unigenes_not_predictions_or_hits(self) -> None:
         bacteria = self._lineage(domain="Bacteria")
         hits = self._hits("contig", [bacteria] * 3)
         rows, reasons = self._assign(
@@ -162,7 +162,7 @@ class AssignTaxonomyTest(unittest.TestCase):
                     ["contig", "-" if domain != "N/A" else "no_consensus"],
                 )
 
-    def test_unanimous_clusters_can_reach_alpha_one(self) -> None:
+    def test_unanimous_unigenes_can_reach_alpha_one(self) -> None:
         rows, reasons = self._assign(
             {"contig": 100},
             self._protein_ids("contig", 3),
@@ -173,30 +173,30 @@ class AssignTaxonomyTest(unittest.TestCase):
         self.assertEqual(reasons[1], ["contig", "-"])
 
     def test_custom_support_curve_controls_assignment(self) -> None:
-        # At 1 kb require four clusters; at 10 kb require six.
+        # At 1 kb require four unigenes; at 10 kb require six.
         bacteria = self._lineage(domain="Bacteria")
-        for length, clusters, domain in (
+        for length, unigenes, domain in (
             (1_000, 3, "N/A"),
             (1_000, 4, "Bacteria"),
             (10_000, 5, "N/A"),
             (10_000, 6, "Bacteria"),
         ):
-            with self.subTest(length=length, clusters=clusters):
+            with self.subTest(length=length, unigenes=unigenes):
                 rows, _ = self._assign(
                     {"contig": length},
-                    self._protein_ids("contig", clusters),
-                    self._hits("contig", [bacteria] * clusters),
-                    min_aligned_clusters=4,
-                    cluster_support_length=1_000,
-                    clusters_per_decade=2,
+                    self._protein_ids("contig", unigenes),
+                    self._hits("contig", [bacteria] * unigenes),
+                    min_aligned_unigenes=4,
+                    unigene_support_length=1_000,
+                    unigenes_per_decade=2,
                 )
                 self.assertEqual(rows[1][_DOMAIN_COLUMN], domain)
 
     def test_rejects_invalid_support_parameters(self) -> None:
         for options in (
-            {"min_aligned_clusters": 2},
-            {"cluster_support_length": 0},
-            {"clusters_per_decade": 0},
+            {"min_aligned_unigenes": 2},
+            {"unigene_support_length": 0},
+            {"unigenes_per_decade": 0},
         ):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 self._assign({"contig": 100}, [], [], **options)

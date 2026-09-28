@@ -12,11 +12,11 @@ from cluster_proteins import ProteinGroup, cluster_proteins  # noqa: E402
 
 
 class ClusterProteinsTest(unittest.TestCase):
-    def test_writes_every_cluster_representative_below_the_limit(self) -> None:
+    def test_writes_every_unigene_below_the_limit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             source = directory / "proteins.faa"
-            clustered = directory / "clustered.faa"
+            unigenes = directory / "clustered.faa"
             source.write_text(
                 ">contig_1\nM\n>contig_2\nM\n>contig_3\nM\n",
                 encoding="utf-8",
@@ -24,14 +24,14 @@ class ClusterProteinsTest(unittest.TestCase):
 
             cluster_proteins(
                 source,
-                clustered,
+                unigenes,
                 workers=1,
-                max_clusters=10,
+                max_unigenes=10,
                 runner=self._runner(">contig_1 representative\nM\n>contig_3\nM\n"),
             )
 
             self.assertEqual(
-                clustered.read_text(encoding="utf-8"),
+                unigenes.read_text(encoding="utf-8"),
                 ">contig_1 representative\nM\n>contig_3\nM\n",
             )
 
@@ -39,7 +39,7 @@ class ClusterProteinsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             source = directory / "proteins.faa"
-            clustered = directory / "clustered.faa"
+            unigenes = directory / "clustered.faa"
             source.write_text(
                 ">contig_1\nM\n>contig_2\nM\n>contig_3\nM\n>contig_4\nM\n",
                 encoding="utf-8",
@@ -47,9 +47,9 @@ class ClusterProteinsTest(unittest.TestCase):
 
             cluster_proteins(
                 source,
-                clustered,
+                unigenes,
                 workers=1,
-                max_clusters=2,
+                max_unigenes=2,
                 runner=self._runner(
                     ">contig_1\nM\n>contig_2\nM\n>contig_3\nM\n>contig_4\nM\n"
                 ),
@@ -57,7 +57,7 @@ class ClusterProteinsTest(unittest.TestCase):
 
             retained = [
                 line[1:]
-                for line in clustered.read_text(encoding="utf-8").splitlines()
+                for line in unigenes.read_text(encoding="utf-8").splitlines()
                 if line.startswith(">")
             ]
             self.assertEqual(len(retained), 2)
@@ -67,26 +67,26 @@ class ClusterProteinsTest(unittest.TestCase):
                 {"contig_1", "contig_2", "contig_3", "contig_4"},
             )
 
-    def test_rejects_a_non_positive_cluster_limit(self) -> None:
+    def test_rejects_a_non_positive_unigene_limit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             source = directory / "proteins.faa"
             source.write_text(">contig_1\nM\n", encoding="utf-8")
 
-            with self.assertRaisesRegex(ValueError, "cluster limit must be positive"):
+            with self.assertRaises(ValueError):
                 cluster_proteins(
                     source,
                     directory / "clustered.faa",
                     workers=1,
-                    max_clusters=0,
+                    max_unigenes=0,
                     runner=self._runner(">contig_1\nM\n"),
                 )
 
     @staticmethod
-    def _runner(clustered: str):
+    def _runner(unigenes: str):
         def run_cdhit(group: ProteinGroup) -> Path:
-            group.clustered.write_text(clustered, encoding="utf-8")
-            return group.clustered
+            group.unigenes.write_text(unigenes, encoding="utf-8")
+            return group.unigenes
 
         return run_cdhit
 

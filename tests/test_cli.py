@@ -54,9 +54,9 @@ class RunCliTest(unittest.TestCase):
 
     def test_rejects_support_options_outside_their_allowed_ranges(self) -> None:
         for option, value in (
-            ("--min-aligned-clusters", "2"),
-            ("--cluster-support-length", "0"),
-            ("--clusters-per-decade", "0"),
+            ("--min-aligned-unigenes", "2"),
+            ("--unigene-support-length", "0"),
+            ("--unigenes-per-decade", "0"),
         ):
             with self.subTest(option=option):
                 result = CliRunner().invoke(app, self.run_arguments(option, value))

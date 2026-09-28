@@ -34,7 +34,7 @@ _METADATA_COLUMNS = (
     "sequence_length",
     "gc_percent",
     "median_coverage",
-    "number_of_aligned_clusters",
+    "number_of_aligned_unigenes",
 )
 _REQUIRED_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS, "unassigned_reason")
 
@@ -109,7 +109,7 @@ class AssemblySequence:
     length: int
     gc_percent: float
     median_coverage: float
-    aligned_clusters: int
+    aligned_unigenes: int
     lineage: tuple[str, ...]
     reason: str
 
@@ -190,7 +190,7 @@ def _read_sequences(source: Path) -> list[AssemblySequence]:
                         length=int(row["sequence_length"]),
                         gc_percent=float(row["gc_percent"]),
                         median_coverage=float(row["median_coverage"]),
-                        aligned_clusters=int(row["number_of_aligned_clusters"]),
+                        aligned_unigenes=int(row["number_of_aligned_unigenes"]),
                         lineage=tuple(row[rank] for rank in TAXONOMIC_RANKS),
                         reason=row["unassigned_reason"],
                     )
@@ -278,7 +278,7 @@ def _status_of(sequence: AssemblySequence) -> str:
         return "no consensus"
     if sequence.reason == _WHOKARYOTE_REASON:
         return "whokaryote veto"
-    if sequence.aligned_clusters == 0:
+    if sequence.aligned_unigenes == 0:
         return "no protein evidence"
     return "unassigned (other)"
 
