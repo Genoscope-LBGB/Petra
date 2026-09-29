@@ -54,7 +54,10 @@ SILVA_LSU_FASTA = (
     ">ZZ000002.1.2600 unidentified;unidentified fungus\n"
     "GGGGGGGG\n"
 )
-EUKARYOME_FASTA = ">MH863990;k__Fungi;p__Basidiomycota;s__Agaricus_bisporus\nTTAACCGG\n"
+EUKARYOME_FASTA = (
+    ">MH863990;k__Fungi;p__Basidiomycota;c__Agaricomycetes;o__Agaricales;"
+    "f__Agaricaceae;g__Agaricus;s__bisporus\nTTAACCGG\n"
+)
 # Rfam clan information lists family names, not accessions, and a covariance
 # model declares both.
 CM_FAMILIES = {
@@ -637,23 +640,62 @@ class SilvaTaxonMapTest(unittest.TestCase):
 
 
 class EukaryomeRecordsTest(unittest.TestCase):
-    def test_keeps_rank_names_verbatim_and_writes_plain_headers(self) -> None:
+    def test_writes_plain_headers_and_looks_species_up_as_binomials(self) -> None:
+        ranks, accessions, written = self._write(EUKARYOME_FASTA)
+
+        self.assertEqual(
+            ranks,
+            {
+                "MH863990": (
+                    "Fungi",
+                    "Basidiomycota",
+                    "Agaricomycetes",
+                    "Agaricales",
+                    "Agaricaceae",
+                    "Agaricus",
+                    "Agaricus bisporus",
+                )
+            },
+        )
+        self.assertEqual(accessions, {"MH863990"})
+        self.assertEqual(written, ">MH863990\nTTAACCGG\n")
+
+    def test_drops_unclassified_placeholders_and_orphan_epithets(self) -> None:
+        ranks, _, _ = self._write(
+            ">EUK1;k__Metazoa;p__Arthropoda;c__Malacostraca;o__Amphipoda;"
+            "f__Gammaridae;g__unclassified;s__unclassified\nA\n"
+            ">NC_1;k___mitochondrion;p__unclassified;c__unclassified;"
+            "o__unclassified;f__unclassified;g__Batrachospermum;s__unclassified\nA\n"
+            ">EUK2;k__Fungi;p__unclassified;c__unclassified;o__unclassified;"
+            "f__unclassified;g__unclassified;s__japonica\nA\n"
+        )
+
+        self.assertEqual(
+            ranks,
+            {
+                "EUK1": (
+                    "Metazoa",
+                    "Arthropoda",
+                    "Malacostraca",
+                    "Amphipoda",
+                    "Gammaridae",
+                ),
+                "NC_1": ("_mitochondrion", "Batrachospermum"),
+                "EUK2": ("Fungi",),
+            },
+        )
+
+    @staticmethod
+    def _write(fasta: str) -> tuple[dict[str, tuple[str, ...]], set[str], str]:
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "eukaryome.fasta"
-            source.write_text(EUKARYOME_FASTA, encoding="utf-8")
+            source.write_text(fasta, encoding="utf-8")
             destination = io.StringIO()
-
             ranks, accessions = database._write_eukaryome_records(
                 source=source,
                 destination=destination,
             )
-
-        self.assertEqual(
-            ranks,
-            {"MH863990": ("Fungi", "Basidiomycota", "Agaricus_bisporus")},
-        )
-        self.assertEqual(accessions, {"MH863990"})
-        self.assertEqual(destination.getvalue(), ">MH863990\nTTAACCGG\n")
+        return ranks, accessions, destination.getvalue()
 
 
 class ResolveTaxidsTest(unittest.TestCase):
