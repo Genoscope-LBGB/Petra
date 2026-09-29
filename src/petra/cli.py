@@ -31,6 +31,7 @@ from .taxonomy import HostTaxonError, resolve_host_phylum
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
 _RUN_CONTEXT = {**_HELP_CONTEXT, "allow_extra_args": True}
 _RRNA_CHUNKS = 4
+_THEMES_DIRECTORY = Path(__file__).resolve().parent / "themes"
 
 
 class SequencingTechnology(str, Enum):
@@ -46,6 +47,13 @@ class SummaryPanel(str, Enum):
     LONGEST_SEQUENCES = "longest-sequences"
     LENGTH_LEGEND = "length-legend"
     ASSIGNMENT_STATUS = "assignment-status"
+
+
+SummaryTheme = Enum(
+    "SummaryTheme",
+    {path.stem: path.stem for path in sorted(_THEMES_DIRECTORY.glob("*.tsv"))},
+    type=str,
+)
 
 
 def _require_executables(
@@ -372,9 +380,20 @@ def run(
             readable=True,
             help=(
                 "Two-column TSV of taxonomic rank and color. Sequences are colored "
-                "with the deepest assigned rank found in the file instead of their "
-                "superkingdom; assigned sequences without a match are colored as "
-                "'other'."
+                "with the deepest assigned rank found in the file; assigned "
+                "sequences without a match are colored as 'other'. Cannot be "
+                "combined with --summary-theme."
+            ),
+            rich_help_panel="Summary graph",
+        ),
+    ] = None,
+    summary_theme: Annotated[
+        SummaryTheme | None,
+        typer.Option(
+            "--summary-theme",
+            help=(
+                "Packaged color file of the summary graph. 'superkingdom' is used "
+                "unless this or --summary-colors is given."
             ),
             rich_help_panel="Summary graph",
         ),
@@ -425,6 +444,11 @@ def run(
         raise typer.BadParameter(
             "--host-taxon requires --rrna.",
             param_hint="--host-taxon",
+        )
+    if summary_colors is not None and summary_theme is not None:
+        raise typer.BadParameter(
+            "--summary-colors cannot be combined with --summary-theme.",
+            param_hint="--summary-theme",
         )
     if database is None and (not skip_taxonomic_assignment or rrna):
         raise typer.BadParameter(
@@ -506,7 +530,11 @@ def run(
             "unigene_support_length": unigene_support_length,
             "unigenes_per_decade": unigenes_per_decade,
             "summary_font_size": summary_font_size,
-            "summary_colors": summary_colors,
+            "summary_colors": (
+                _THEMES_DIRECTORY / f"{summary_theme.value}.tsv"
+                if summary_theme is not None
+                else summary_colors
+            ),
             "summary_disabled_panels": [
                 panel.value for panel in summary_disable_panel or ()
             ],
