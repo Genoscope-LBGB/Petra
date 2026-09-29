@@ -106,10 +106,10 @@ class AssignTaxonomyTest(unittest.TestCase):
     def test_support_is_not_required_again_for_each_rank(self) -> None:
         rows, reasons = self._assign(
             {"contig": 500_000},
-            self._protein_ids("contig", 6),
+            self._protein_ids("contig", 7),
             self._hits(
                 "contig",
-                [self._lineage(domain="Bacteria", phylum="Pseudomonadota")] * 3
+                [self._lineage(domain="Bacteria", phylum="Pseudomonadota")] * 4
                 + [self._lineage(domain="Bacteria", phylum="Bacillota")]
                 + [self._lineage(domain="Archaea", phylum="Thermoproteota")] * 2,
             ),
@@ -175,32 +175,21 @@ class AssignTaxonomyTest(unittest.TestCase):
             ["Eukaryota", "N/A", "Ciliophora"],
         )
 
-    def test_alpha_compares_the_observed_share_inclusively(self) -> None:
+    def test_a_share_equal_to_alpha_is_not_a_majority(self) -> None:
         bacteria = self._lineage(domain="Bacteria")
-        archaea = self._lineage(domain="Archaea")
-        for alpha, domain in ((0.6, "Bacteria"), (0.61, "N/A")):
-            with self.subTest(alpha=alpha):
+        for options, domain in (({}, "N/A"), ({"alpha": 0.49}, "Bacteria")):
+            with self.subTest(options=options):
                 rows, reasons = self._assign(
                     {"contig": 100},
                     self._protein_ids("contig", 10),
-                    self._hits("contig", [bacteria] * 6 + [archaea] * 4),
-                    alpha=alpha,
+                    self._hits("contig", [bacteria] * 5 + [self._lineage()] * 5),
+                    **options,
                 )
                 self.assertEqual(rows[1][_DOMAIN_COLUMN], domain)
                 self.assertEqual(
                     reasons[1],
                     ["contig", "-" if domain != "N/A" else "no_consensus"],
                 )
-
-    def test_unanimous_unigenes_can_reach_alpha_one(self) -> None:
-        rows, reasons = self._assign(
-            {"contig": 100},
-            self._protein_ids("contig", 3),
-            self._hits("contig", [self._lineage(domain="Bacteria")] * 3),
-            alpha=1.0,
-        )
-        self.assertEqual(rows[1][_DOMAIN_COLUMN], "Bacteria")
-        self.assertEqual(reasons[1], ["contig", "-"])
 
     def test_custom_support_curve_controls_assignment(self) -> None:
         # At 1 kb require four unigenes; at 10 kb require six.
@@ -231,14 +220,18 @@ class AssignTaxonomyTest(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 self._assign({"contig": 100}, [], [], **options)
 
-    def test_rejects_an_alpha_outside_the_unit_interval(self) -> None:
-        with self.assertRaisesRegex(ValueError, "alpha-majority threshold"):
-            self._assign(
-                {"contig": 100},
-                self._protein_ids("contig", 1),
-                self._hits("contig", [self._lineage(domain="Bacteria")]),
-                alpha=0.0,
-            )
+    def test_rejects_an_alpha_outside_the_open_unit_interval(self) -> None:
+        for alpha in (0.0, 1.0):
+            with (
+                self.subTest(alpha=alpha),
+                self.assertRaisesRegex(ValueError, "alpha-majority threshold"),
+            ):
+                self._assign(
+                    {"contig": 100},
+                    self._protein_ids("contig", 1),
+                    self._hits("contig", [self._lineage(domain="Bacteria")]),
+                    alpha=alpha,
+                )
 
     def test_uses_one_assignment_per_protein_from_the_best_retained_hit(self) -> None:
         bacteria = self._lineage(domain="Bacteria")
