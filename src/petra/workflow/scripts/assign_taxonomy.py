@@ -204,7 +204,7 @@ def _minimum_aligned_unigenes(
 def _majority_taxon(
     votes: Counter[str], total: int, alpha: float
 ) -> str:
-    """Return the unique taxon whose observed vote share reaches alpha."""
+    """Return the unique taxon whose observed vote share exceeds alpha."""
     winner = _MISSING_TAXON
     highest_count = 0
     tied = False
@@ -217,7 +217,7 @@ def _majority_taxon(
             tied = False
         elif count == highest_count:
             tied = True
-    if tied or highest_count / total < alpha:
+    if tied or highest_count / total <= alpha:
         return _MISSING_TAXON
     return winner
 
@@ -254,9 +254,9 @@ def assign_taxonomy(
     unigene_support_length: int = 50_000,
     unigenes_per_decade: int = 3,
 ) -> None:
-    if not 0 < alpha <= 1:
+    if not 0 < alpha < 1:
         raise ValueError(
-            "The alpha-majority threshold must be greater than 0 and at most 1."
+            "The alpha-majority threshold must be greater than 0 and less than 1."
         )
     if min_aligned_unigenes < 3:
         raise ValueError("The minimum aligned unigene count must be at least 3.")

@@ -90,8 +90,10 @@ def _require_executables(
 
 
 def _validate_alpha(value: float) -> float:
-    if value <= 0:
-        raise typer.BadParameter("The alpha-majority threshold must be greater than 0.")
+    if not 0 < value < 1:
+        raise typer.BadParameter(
+            "The alpha-majority threshold must be greater than 0 and less than 1."
+        )
     return value
 
 
@@ -261,12 +263,11 @@ def run(
         float,
         typer.Option(
             "--alpha",
-            min=0.0,
-            max=1.0,
             callback=_validate_alpha,
             help=(
-                "Minimum observed share of a sequence's aligned unigenes that "
-                "must support a taxon."
+                "Share of a sequence's aligned unigenes that a taxon must "
+                "exceed, strictly between 0 and 1; the default requires a "
+                "strict majority."
             ),
             rich_help_panel="Taxonomic assignment",
             show_default=True,
