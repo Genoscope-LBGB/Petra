@@ -145,6 +145,36 @@ class AssignTaxonomyTest(unittest.TestCase):
         self.assertEqual(rows[1][_DOMAIN_COLUMN], "N/A")
         self.assertEqual(reasons[1], ["contig", "no_consensus"])
 
+    def test_leaves_ranks_below_an_unresolved_rank_unassigned(self) -> None:
+        virus = self._lineage(domain="Viruses", **{"class": "Naldaviricetes"})
+        animal = self._lineage(
+            domain="Eukaryota", kingdom="Metazoa", phylum="Arthropoda"
+        )
+        rows, reasons = self._assign(
+            {"contig": 100},
+            self._protein_ids("contig", 6),
+            self._hits("contig", [virus] * 3 + [animal] * 3),
+        )
+
+        self.assertEqual(rows[1][_DOMAIN_COLUMN:], ["N/A"] * len(TAXONOMIC_RANKS))
+        self.assertEqual(reasons[1], ["contig", "no_consensus"])
+
+    def test_descends_past_a_rank_absent_from_the_winning_clade(self) -> None:
+        ciliate = self._lineage(domain="Eukaryota", phylum="Ciliophora")
+        animal = self._lineage(
+            domain="Eukaryota", kingdom="Metazoa", phylum="Cnidaria"
+        )
+        rows, _ = self._assign(
+            {"contig": 100},
+            self._protein_ids("contig", 4),
+            self._hits("contig", [ciliate] * 3 + [animal]),
+        )
+
+        self.assertEqual(
+            rows[1][_DOMAIN_COLUMN : _PHYLUM_COLUMN + 1],
+            ["Eukaryota", "N/A", "Ciliophora"],
+        )
+
     def test_alpha_compares_the_observed_share_inclusively(self) -> None:
         bacteria = self._lineage(domain="Bacteria")
         archaea = self._lineage(domain="Archaea")
