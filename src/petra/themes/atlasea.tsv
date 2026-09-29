@@ -1,7 +1,7 @@
 # ATLASea theme: one color per eukaryotic phylum commonly met in ATLASea samples,
 # plus Dinophyceae and Phaeophyceae, which have no phylum in the NCBI taxonomy.
-# Prokaryotes and viruses keep their superkingdom color, and eukaryotes outside
-# the listed taxa fall back to the Eukaryota color. Colors were picked to be as
+# Every superkingdom keeps its default color, so eukaryotes outside the listed
+# taxa stay red. Colors were picked to be as
 # far apart as possible in the CAM02-UCS color space, the most distinct ones
 # going to the likeliest contaminants.
 Bacteria	#00CD00
@@ -23,7 +23,7 @@ Ctenophora	#90C8A6
 Rhodophyta	#FFB100
 Chlorophyta	#00A67A
 Streptophyta	#006F59
-Phaeophyceae	#A6214E
+Phaeophyceae	#522931
 Haptophyta	#F4BC9B
 Bacillariophyta	#00C8FF
 Dinophyceae	#00FFD3
@@ -34,4 +34,4 @@ Cercozoa	#FF8543
 Oomycota	#164EFF
 Ascomycota	#B185B1
 Basidiomycota	#85FF00
-Eukaryota	#262626
+Eukaryota	#B22222
