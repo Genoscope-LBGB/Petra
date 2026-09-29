@@ -16,7 +16,7 @@ from typing import BinaryIO, TextIO
 class ProteinGroup:
     sequence_id: str
     source: Path
-    clustered: Path
+    unigenes: Path
     log: Path
 
 
@@ -64,7 +64,7 @@ def _group_batches(
                         group = ProteinGroup(
                             sequence_id=sequence_id,
                             source=prefix.with_suffix(".faa"),
-                            clustered=prefix.with_suffix(".clustered.faa"),
+                            unigenes=prefix.with_suffix(".clustered.faa"),
                             log=prefix.with_suffix(".log"),
                         )
                         batch.append(group)
@@ -92,7 +92,7 @@ def _run_cdhit(group: ProteinGroup) -> Path:
         "-i",
         str(group.source),
         "-o",
-        str(group.clustered),
+        str(group.unigenes),
         "-n",
         "5",
         "-d",
@@ -112,7 +112,7 @@ def _run_cdhit(group: ProteinGroup) -> Path:
         raise RuntimeError(
             f"CD-HIT failed for assembly sequence {group.sequence_id!r}:\n{details}"
         )
-    return group.clustered
+    return group.unigenes
 
 
 def _fasta_records(source: Path) -> Iterator[list[bytes]]:
@@ -126,7 +126,7 @@ def _fasta_records(source: Path) -> Iterator[list[bytes]]:
             elif record is None:
                 if line.strip():
                     raise ValueError(
-                        "Clustered protein FASTA contains sequence data before a header."
+                        "Unigene protein FASTA contains sequence data before a header."
                     )
             else:
                 record.append(line)
@@ -137,11 +137,11 @@ def _fasta_records(source: Path) -> Iterator[list[bytes]]:
 def _record_identifier(record: list[bytes]) -> str:
     identifier = record[0][1:].split(maxsplit=1)[0]
     if not identifier:
-        raise ValueError("Clustered protein FASTA contains an empty identifier.")
+        raise ValueError("Unigene protein FASTA contains an empty identifier.")
     return identifier.decode("utf-8")
 
 
-def _sample_clusters(
+def _sample_unigenes(
     source: Path,
     destination: BinaryIO,
     maximum: int,
@@ -158,7 +158,7 @@ def _sample_clusters(
         representative_id = _record_identifier(record)
         if representative_id in seen_ids:
             raise ValueError(
-                f"Duplicate clustered protein identifier: {representative_id!r}."
+                f"Duplicate unigene protein identifier: {representative_id!r}."
             )
         seen_ids.add(representative_id)
         candidate = (index, record)
@@ -171,7 +171,7 @@ def _sample_clusters(
 
     if total == 0:
         raise ValueError(
-            f"CD-HIT produced no clusters for assembly sequence {sequence_id!r}."
+            f"CD-HIT produced no unigenes for assembly sequence {sequence_id!r}."
         )
     for _, record in sorted(reservoir):
         destination.writelines(record)
@@ -181,14 +181,14 @@ def cluster_proteins(
     source: Path,
     destination: Path,
     workers: int,
-    max_clusters: int,
+    max_unigenes: int,
     runner: Callable[[ProteinGroup], Path] = _run_cdhit,
     log: TextIO | None = None,
 ) -> None:
     if workers < 1:
         raise ValueError("CD-HIT worker count must be positive.")
-    if max_clusters < 1:
-        raise ValueError("The per-sequence cluster limit must be positive.")
+    if max_unigenes < 1:
+        raise ValueError("The per-sequence unigene limit must be positive.")
 
     with TemporaryDirectory(prefix="petra-cdhit-") as temporary_directory:
         directory = Path(temporary_directory)
@@ -197,8 +197,8 @@ def cluster_proteins(
             ThreadPoolExecutor(max_workers=workers) as executor,
         ):
             for batch in _group_batches(source, directory, workers):
-                clustered_outputs = executor.map(runner, batch)
-                for group, clustered in zip(batch, clustered_outputs, strict=True):
+                unigene_outputs = executor.map(runner, batch)
+                for group, unigenes in zip(batch, unigene_outputs, strict=True):
                     if log is not None and group.log.is_file():
                         log.write(f"== Assembly sequence {group.sequence_id} ==\n")
                         with group.log.open(encoding="utf-8") as group_log:
@@ -206,10 +206,10 @@ def cluster_proteins(
                                 log.write(line)
                         log.write("\n")
                         log.flush()
-                    _sample_clusters(
-                        clustered,
+                    _sample_unigenes(
+                        unigenes,
                         output_handle,
-                        max_clusters,
+                        max_unigenes,
                         group.sequence_id,
                     )
 

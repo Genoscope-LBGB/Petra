@@ -223,13 +223,13 @@ def run(
             show_default=True,
         ),
     ] = 100,
-    max_clusters_per_sequence: Annotated[
+    max_unigenes_per_sequence: Annotated[
         int,
         typer.Option(
-            "--max-clusters",
+            "--max-unigenes",
             min=1,
             help=(
-                "Maximum number of protein clusters retained per input "
+                "Maximum number of unigenes retained per input "
                 "assembly sequence."
             ),
             rich_help_panel="Gene prediction",
@@ -257,44 +257,44 @@ def run(
             max=1.0,
             callback=_validate_alpha,
             help=(
-                "Minimum observed share of a sequence's aligned clusters that "
+                "Minimum observed share of a sequence's aligned unigenes that "
                 "must support a taxon."
             ),
             rich_help_panel="Taxonomic assignment",
             show_default=True,
         ),
     ] = 0.5,
-    min_aligned_clusters: Annotated[
+    min_aligned_unigenes: Annotated[
         int,
         typer.Option(
-            "--min-aligned-clusters",
+            "--min-aligned-unigenes",
             min=3,
             help=(
-                "Minimum aligned clusters required per sequence at or below "
-                "--cluster-support-length. Longer sequences require more support."
+                "Minimum aligned unigenes required per sequence at or below "
+                "--unigene-support-length. Longer sequences require more support."
             ),
             rich_help_panel="Taxonomic assignment",
             show_default=True,
         ),
     ] = 3,
-    cluster_support_length: Annotated[
+    unigene_support_length: Annotated[
         int,
         typer.Option(
-            "--cluster-support-length",
+            "--unigene-support-length",
             min=1,
-            help="Sequence length in bp above which required cluster support grows.",
+            help="Sequence length in bp above which required unigene support grows.",
             rich_help_panel="Taxonomic assignment",
             show_default=True,
         ),
     ] = 50_000,
-    clusters_per_decade: Annotated[
+    unigenes_per_decade: Annotated[
         int,
         typer.Option(
-            "--clusters-per-decade",
+            "--unigenes-per-decade",
             min=1,
             help=(
-                "Additional aligned clusters required per tenfold length increase "
-                "above --cluster-support-length."
+                "Additional aligned unigenes required per tenfold length increase "
+                "above --unigene-support-length."
             ),
             rich_help_panel="Taxonomic assignment",
             show_default=True,
@@ -499,12 +499,12 @@ def run(
             "sequencing_technology": technology,
             "no_bam_cleaning": no_bam_cleaning,
             "max_low_complexity": max_low_complexity,
-            "max_clusters_per_sequence": max_clusters_per_sequence,
+            "max_unigenes_per_sequence": max_unigenes_per_sequence,
             "max_target_occurrences": max_target_occurrences,
             "alpha": alpha,
-            "min_aligned_clusters": min_aligned_clusters,
-            "cluster_support_length": cluster_support_length,
-            "clusters_per_decade": clusters_per_decade,
+            "min_aligned_unigenes": min_aligned_unigenes,
+            "unigene_support_length": unigene_support_length,
+            "unigenes_per_decade": unigenes_per_decade,
             "summary_font_size": summary_font_size,
             "summary_colors": summary_colors,
             "summary_disabled_panels": [

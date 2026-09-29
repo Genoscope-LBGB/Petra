@@ -23,7 +23,7 @@ _COLUMNS = (
     "sequence_length",
     "gc_percent",
     "median_coverage",
-    "number_of_aligned_clusters",
+    "number_of_aligned_unigenes",
     *TAXONOMIC_RANKS,
     "unassigned_reason",
 )
@@ -40,7 +40,7 @@ def _row(
     length: int,
     gc_percent: float,
     coverage: float,
-    clusters: int,
+    unigenes: int,
     lineage: dict[str, str],
     reason: str = "-",
 ) -> str:
@@ -49,7 +49,7 @@ def _row(
         "sequence_length": str(length),
         "gc_percent": f"{gc_percent}",
         "median_coverage": f"{coverage:g}",
-        "number_of_aligned_clusters": str(clusters),
+        "number_of_aligned_unigenes": str(unigenes),
         "unassigned_reason": reason,
         **{rank: lineage.get(rank, "N/A") for rank in TAXONOMIC_RANKS},
     }

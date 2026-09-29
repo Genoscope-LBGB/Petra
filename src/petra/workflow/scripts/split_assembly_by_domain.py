@@ -12,7 +12,7 @@ _METADATA_COLUMNS = (
     "sequence_length",
     "gc_percent",
     "median_coverage",
-    "number_of_aligned_clusters",
+    "number_of_aligned_unigenes",
 )
 _TAXONOMY_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS, "unassigned_reason")
 _OUTPUT_BY_DOMAIN = {

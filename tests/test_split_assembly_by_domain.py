@@ -114,7 +114,7 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
             "sequence_length",
             "gc_percent",
             "median_coverage",
-            "number_of_aligned_clusters",
+            "number_of_aligned_unigenes",
             *TAXONOMIC_RANKS,
             "unassigned_reason",
         ]

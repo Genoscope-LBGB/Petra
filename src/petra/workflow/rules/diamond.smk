@@ -1,5 +1,5 @@
 rule diamond:
-    """Align clustered predicted proteins against the configured DIAMOND database."""
+    """Align unigene proteins against the configured DIAMOND database."""
     input:
         proteins="predictions.clustered.faa",
         database=config["diamond_db"],
@@ -65,8 +65,8 @@ rule replace_taxids_with_lineages:
 
 rule assign_taxonomy:
     """
-    Require length-dependent cluster support once per sequence, then assign its
-    taxonomy by the observed alpha-majority of its aligned clusters.
+    Require length-dependent unigene support once per sequence, then assign its
+    taxonomy by the observed alpha-majority of its aligned unigenes.
     """
     input:
         assembly=config["assembly"],
@@ -82,8 +82,8 @@ rule assign_taxonomy:
         "benchmarks/assign_taxonomy.tsv"
     params:
         alpha=config["alpha"],
-        min_aligned_clusters=config["min_aligned_clusters"],
-        cluster_support_length=config["cluster_support_length"],
-        clusters_per_decade=config["clusters_per_decade"],
+        min_aligned_unigenes=config["min_aligned_unigenes"],
+        unigene_support_length=config["unigene_support_length"],
+        unigenes_per_decade=config["unigenes_per_decade"],
     script:
         "../scripts/assign_taxonomy.py"

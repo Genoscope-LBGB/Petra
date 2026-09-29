@@ -79,12 +79,12 @@ petra run --assembly assembly.fasta --long-reads reads.fastq.gz --output run-1
 
 #### Taxonomic assignment
 
-PETRA first checks the number of aligned protein clusters against a
+PETRA first checks the number of aligned unigenes against a
 length-dependent minimum, once for the whole sequence. With the defaults,
-sequences up to 50,000 bp require three aligned clusters. Above that length,
+sequences up to 50,000 bp require three aligned unigenes. Above that length,
 the minimum is `3 + ceil(3 * log10(sequence_length / 50000))`:
 
-| Sequence length | Minimum aligned clusters |
+| Sequence length | Minimum aligned unigenes |
 | --- | --- |
 | Up to 50 kb | 3 |
 | 100 kb | 4 |
@@ -93,10 +93,10 @@ the minimum is `3 + ceil(3 * log10(sequence_length / 50000))`:
 | 50 Mb | 12 |
 
 Configure the curve with:
-- `--min-aligned-clusters` (default `3`, minimum `3`): the minimum at or below
+- `--min-aligned-unigenes` (default `3`, minimum `3`): the minimum at or below
   the length anchor.
-- `--cluster-support-length` (default `50000`, minimum `1`): the anchor in bp.
-- `--clusters-per-decade` (default `3`, minimum `1`): additional clusters per
+- `--unigene-support-length` (default `50000`, minimum `1`): the anchor in bp.
+- `--unigenes-per-decade` (default `3`, minimum `1`): additional unigenes per
   tenfold increase above the anchor.
 
 Sequences with taxonomic evidence below this minimum have all ranks set to
@@ -104,7 +104,7 @@ Sequences with taxonomic evidence below this minimum have all ranks set to
 evidence remains in `predictions.gene_taxonomy.tsv`.
 
 Sequences passing the gate use the ordinary observed `--alpha` majority
-(default `0.5`), with all aligned clusters in the denominator. If no rank
+(default `0.5`), with all aligned unigenes in the denominator. If no rank
 reaches a unique alpha majority despite taxonomic evidence, the reason is
 `no_consensus`.
 
@@ -169,7 +169,7 @@ type (`mitochondrion`, `plastid`, or `unknown`). Only sequences of at least
 
 The protein-taxonomy workflow also writes `predictions.gene_taxonomy.tsv`.
 Each assembly sequence is an unindented header followed by one tab-indented row
-per aligned predicted-gene cluster, containing the representative gene
+per aligned unigene, containing the representative gene
 identifier and the lineage supported by its highest-scoring retained hit or
 hits. The lineage is semicolon-separated, and missing ranks are omitted;
 a completely unresolved best hit is reported as `N/A`. Sequences

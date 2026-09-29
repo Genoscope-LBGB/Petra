@@ -13,7 +13,7 @@ _METADATA_COLUMNS = (
     "sequence_name",
     "sequence_length",
     "gc_percent",
-    "number_of_aligned_clusters",
+    "number_of_aligned_unigenes",
 )
 _RAW_COLUMNS = (*_METADATA_COLUMNS, *TAXONOMIC_RANKS)
 _WHOKARYOTE_COLUMNS = ("contig", "predicted")

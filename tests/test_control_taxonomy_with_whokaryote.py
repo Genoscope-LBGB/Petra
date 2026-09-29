@@ -119,7 +119,7 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
     @staticmethod
     def _raw_row(
         sequence_id: str,
-        aligned_clusters: str,
+        aligned_unigenes: str,
         domain: str,
         **ranks: str,
     ) -> list[str]:
@@ -127,7 +127,7 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
             domain if rank == "domain" else ranks.get(rank, "N/A")
             for rank in TAXONOMIC_RANKS
         ]
-        return [sequence_id, "100", "42.50", aligned_clusters, *lineage]
+        return [sequence_id, "100", "42.50", aligned_unigenes, *lineage]
 
     @staticmethod
     def _write_raw(destination: Path, rows: list[list[str]]) -> None:
@@ -135,7 +135,7 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
             "sequence_name",
             "sequence_length",
             "gc_percent",
-            "number_of_aligned_clusters",
+            "number_of_aligned_unigenes",
             *TAXONOMIC_RANKS,
         ]
         destination.write_text(

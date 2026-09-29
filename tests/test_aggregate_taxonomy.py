@@ -70,7 +70,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
                     "sequence_length",
                     "gc_percent",
                     "median_coverage",
-                    "number_of_aligned_clusters",
+                    "number_of_aligned_unigenes",
                     *TAXONOMIC_RANKS,
                     "unassigned_reason",
                 ],
@@ -138,7 +138,7 @@ class AggregateTaxonomyTest(unittest.TestCase):
             "sequence_name",
             "sequence_length",
             "gc_percent",
-            "number_of_aligned_clusters",
+            "number_of_aligned_unigenes",
             *TAXONOMIC_RANKS,
         ]
         destination.write_text(
