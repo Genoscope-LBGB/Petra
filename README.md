@@ -188,11 +188,28 @@ GC against depth of coverage with point area scaled by sequence length, both
 cumulative-length marginals, the five longest sequences, and the share of
 sequences and bases that received an assignment.
 
+The taxonomy legend lists each taxon with its cumulative length and sequence
+count (`Rhodophyta  53.5 Mbp · 55`), from the largest to the smallest, with
+`other` and unassigned sequences last. When the list does not fit in one
+column it is split in two, read row by row, so the first row holds the two
+largest taxa.
+
 Customize it with `--summary-font-size`, `--summary-disable-panel` (repeat to
 drop `header`, `gc-histogram`, `coverage-histogram`, `taxonomy-legend`,
-`longest-sequences`, `length-legend` or `assignment-status`) and
-`--summary-colors`. Sequences are colored by superkingdom unless
-`--summary-colors` supplies a two-column TSV of taxonomic rank and color:
+`longest-sequences`, `length-legend` or `assignment-status`), and either
+`--summary-theme` or `--summary-colors`.
+
+A theme is a color file packaged with PETRA in `src/petra/themes/`:
+
+- `superkingdom` (default): one color per superkingdom.
+- `atlasea`: one color per eukaryotic phylum commonly met in ATLASea samples,
+  plus the Dinophyceae and Phaeophyceae classes, which have no phylum in the NCBI
+  taxonomy. Bacteria, Archaea and Viruses keep their superkingdom color, and other
+  eukaryotes are drawn with the Eukaryota color, so eukaryotic contaminants stand
+  out from the host.
+
+`--summary-colors` replaces the theme with your own two-column TSV of taxonomic
+rank and color, in the same format as the theme files:
 
 ```text
 Actinopteri	#1F78B4
@@ -202,10 +219,10 @@ Bacteria	green
 A sequence then takes the color of the deepest assigned rank listed in the
 file, assigned sequences matching no rank are drawn as `other`, and unassigned
 sequences keep the unassigned color. The same graph can be rendered from an
-existing table without rerunning the workflow:
+existing table without rerunning the workflow, with `--theme` or `--colors`:
 
 ```console
-python plot_summary_graph.py -i run-1/predictions.final.tsv -o summary.png
+python plot_summary_graph.py -i run-1/predictions.final.tsv -o summary.png --theme atlasea
 ```
 
 ### Comparing runs
@@ -220,10 +237,13 @@ petra-compare \
   --directory run-1 --name "Chelon auratus" \
   --directory run-2 --name "Pachymatisma johnstonia" \
   --directory run-3 --name "Jania squamata" \
-  --colors taxon_colors.tsv \
+  --theme atlasea \
   --font-size 12 \
   --output comparison.png
 ```
+
+Every panel shares one color file: a theme with `--theme` (`superkingdom` by
+default) or your own TSV with `--colors`.
 
 ### Filtering the prediction table
 
