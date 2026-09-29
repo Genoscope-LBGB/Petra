@@ -104,9 +104,12 @@ Sequences with taxonomic evidence below this minimum have all ranks set to
 evidence remains in `predictions.gene_taxonomy.tsv`.
 
 Sequences passing the gate use the ordinary observed `--alpha` majority
-(default `0.5`), with all aligned unigenes in the denominator. If no rank
-reaches a unique alpha majority despite taxonomic evidence, the reason is
-`no_consensus`.
+(default `0.5`), with all aligned unigenes in the denominator. Ranks are
+resolved top-down: at each rank, only unigenes that agree with the consensus at
+every higher rank vote. Ranks that the winning
+clade lacks (for example, the kingdom of Ciliophora) do not stop the descent.
+If no rank reaches a unique alpha majority despite taxonomic evidence, the
+reason is `no_consensus`.
 
 #### Optional rRNA and tRNA analyses
 
