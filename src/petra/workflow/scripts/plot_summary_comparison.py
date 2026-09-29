@@ -9,7 +9,7 @@ two figures cannot drift apart.
 import argparse
 import sys
 from collections.abc import Sequence as SequenceABC
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import matplotlib
@@ -39,6 +39,7 @@ from plot_summary_graph import (  # noqa: E402
     _EDGE_COLOR,
     _FILL_ALPHA,
     _HISTOGRAM_BINS,
+    _OTHER_GROUP,
     _UNASSIGNED_GROUP,
     _area_scale,
     _bp_unit,
@@ -69,6 +70,7 @@ _LEGEND_PADDING = 0.02
 _NAME_PADDING = 0.01
 _FIT_ATTEMPTS = 3
 _LETTERS = "abcdefghijklmnopqrstuvwxyz"
+_FALLBACK_THEME = "superkingdom"
 
 
 @dataclass(frozen=True)
@@ -124,6 +126,33 @@ def _load_run(name: str, path: Path, color_map: dict[str, str]) -> ComparedRun:
     if not run.covered:
         raise ValueError(f"{source} does not hold any sequence with coverage above 0.")
     return run
+
+
+def _keep_major_taxa(
+    runs: SequenceABC[ComparedRun], min_share: float, fallback: dict[str, str]
+) -> list[ComparedRun]:
+    """Recolor by superkingdom the taxa holding at most min_share % of every run.
+
+    A taxon above the share in any single run keeps its color in all of them, so
+    a contaminant of one assembly reads the same across the figure.
+    """
+    kept = {_OTHER_GROUP, _UNASSIGNED_GROUP}
+    for run in runs:
+        bases: dict[str, int] = {}
+        for sequence, group in zip(run.sequences, run.groups):
+            bases[group] = bases.get(group, 0) + sequence.length
+        total = sum(bases.values())
+        kept.update(group for group, size in bases.items() if size * 100 > min_share * total)
+    return [
+        replace(
+            run,
+            groups=tuple(
+                group if group in kept else _group_of(sequence, fallback)
+                for sequence, group in zip(run.sequences, run.groups)
+            ),
+        )
+        for run in runs
+    ]
 
 
 def _legend_handles(
@@ -226,6 +255,7 @@ def plot_summary_comparison(
     destination: Path,
     *,
     colors: Path | None = None,
+    min_share: float = 5.0,
     font_size: float = 10.0,
     panel_width: float = 5.5,
     height: float = 5.2,
@@ -242,13 +272,20 @@ def plot_summary_comparison(
     ):
         if value <= 0:
             raise ValueError(f"{label} must be greater than zero.")
+    if not 0 <= min_share < 100:
+        raise ValueError("Minimum share must be between 0 and 100 percent.")
 
     color_map = _read_color_map(colors if colors is not None else theme_colors(DEFAULT_THEME))
-    loaded = [_load_run(name, path, color_map) for name, path in runs]
+    fallback = _read_color_map(theme_colors(_FALLBACK_THEME))
+    loaded = _keep_major_taxa(
+        [_load_run(name, path, color_map) for name, path in runs], min_share, fallback
+    )
     ordered_groups, palette = _palette(
         [group for run in loaded for group in run.groups],
         [sequence.length for run in loaded for sequence in run.sequences],
-        color_map,
+        # The theme's own superkingdom colors win, so minor taxa join the
+        # sequences it already draws at that level.
+        {**fallback, **color_map},
     )
 
     fonts = Fonts(base=font_size)
@@ -458,6 +495,17 @@ def _parse_arguments(argv: SequenceABC[str] | None = None) -> argparse.Namespace
         help="Packaged color file to use instead of --colors.",
     )
     parser.add_argument(
+        "--min-share",
+        type=float,
+        default=5.0,
+        metavar="PERCENT",
+        help=(
+            "Color a taxon only if it holds more than this percentage of the bases "
+            "of at least one assembly; smaller taxa take their superkingdom color. "
+            "0 colors every taxon."
+        ),
+    )
+    parser.add_argument(
         "--font-size",
         type=float,
         default=10.0,
@@ -487,6 +535,7 @@ def main(argv: SequenceABC[str] | None = None) -> None:
         list(zip(arguments.name, arguments.directory)),
         arguments.output,
         colors=arguments.colors or theme_colors(arguments.theme),
+        min_share=arguments.min_share,
         font_size=arguments.font_size,
         panel_width=arguments.panel_width,
         height=arguments.height,
