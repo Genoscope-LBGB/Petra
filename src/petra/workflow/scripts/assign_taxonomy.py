@@ -222,6 +222,25 @@ def _majority_taxon(
     return winner
 
 
+def _consensus_lineage(lineages: list[tuple[str, ...]], alpha: float) -> list[str]:
+    """Vote rank by rank, keeping only unigenes that agree with every higher rank.
+
+    Independent per-rank votes can pick a descendant whose ancestor lost a tie,
+    or one from another lineage (a virus class under Metazoa). A rank without
+    consensus leaves no unigene to vote below it; a rank absent from the winning
+    clade (N/A in all its lineages) does not interrupt the descent.
+    """
+    total = len(lineages)
+    consensus: list[str] = []
+    for rank_index in range(len(TAXONOMIC_RANKS)):
+        taxon = _majority_taxon(
+            Counter(lineage[rank_index] for lineage in lineages), total, alpha
+        )
+        consensus.append(taxon)
+        lineages = [lineage for lineage in lineages if lineage[rank_index] == taxon]
+    return consensus
+
+
 def assign_taxonomy(
     assembly: Path,
     proteins: Path,
@@ -261,16 +280,9 @@ def assign_taxonomy(
         protein_lineages,
     )
 
-    rank_votes: dict[str, list[Counter[str]]] = {}
-    assignment_counts: Counter[str] = Counter()
+    sequence_lineages: dict[str, list[tuple[str, ...]]] = {}
     for protein_id, lineage in protein_lineages.items():
-        sequence_id = protein_sequences[protein_id]
-        assignment_counts[sequence_id] += 1
-        sequence_votes = rank_votes.setdefault(
-            sequence_id, [Counter() for _ in TAXONOMIC_RANKS]
-        )
-        for votes, taxon in zip(sequence_votes, lineage, strict=True):
-            votes[taxon] += 1
+        sequence_lineages.setdefault(protein_sequences[protein_id], []).append(lineage)
 
     assigned_sequences = 0
     with (
@@ -285,32 +297,26 @@ def assign_taxonomy(
         )
         reasons_handle.write(f"sequence_name\t{_REASON_COLUMN}\n")
         for sequence_id in sequence_ids:
-            total = assignment_counts[sequence_id]
+            lineages = sequence_lineages.get(sequence_id, [])
+            total = len(lineages)
             sequence = sequences[sequence_id]
             reason = _NO_REASON
             lineage = [_MISSING_TAXON] * len(TAXONOMIC_RANKS)
-            if total:
-                votes_by_rank = rank_votes[sequence_id]
-                has_taxonomic_evidence = any(
-                    taxon != _MISSING_TAXON
-                    for votes in votes_by_rank
-                    for taxon in votes
-                )
-                if has_taxonomic_evidence:
-                    if total < _minimum_aligned_unigenes(
-                        sequence.length,
-                        min_aligned_unigenes,
-                        unigene_support_length,
-                        unigenes_per_decade,
-                    ):
-                        reason = _INSUFFICIENT_SUPPORT_REASON
-                    else:
-                        lineage = [
-                            _majority_taxon(votes, total, alpha)
-                            for votes in votes_by_rank
-                        ]
-                        if all(taxon == _MISSING_TAXON for taxon in lineage):
-                            reason = _NO_CONSENSUS_REASON
+            has_taxonomic_evidence = any(
+                taxon != _MISSING_TAXON for protein in lineages for taxon in protein
+            )
+            if has_taxonomic_evidence:
+                if total < _minimum_aligned_unigenes(
+                    sequence.length,
+                    min_aligned_unigenes,
+                    unigene_support_length,
+                    unigenes_per_decade,
+                ):
+                    reason = _INSUFFICIENT_SUPPORT_REASON
+                else:
+                    lineage = _consensus_lineage(lineages, alpha)
+                    if all(taxon == _MISSING_TAXON for taxon in lineage):
+                        reason = _NO_CONSENSUS_REASON
             if any(taxon != _MISSING_TAXON for taxon in lineage):
                 assigned_sequences += 1
             gc_percent = (
