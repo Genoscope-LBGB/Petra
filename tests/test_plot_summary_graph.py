@@ -11,11 +11,16 @@ sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 from assign_taxonomy import TAXONOMIC_RANKS  # noqa: E402
 from plot_summary_graph import (  # noqa: E402
     PANELS,
+    THEMES,
+    _compact_bp,
     _group_of,
     _human_bp,
+    _palette,
     _read_color_map,
     _read_sequences,
+    _row_major,
     plot_summary_graph,
+    theme_colors,
 )
 
 _COLUMNS = (
@@ -97,14 +102,30 @@ class ColorGroupTest(unittest.TestCase):
             sequences = _read_sequences(_taxonomy(directory))
 
             self.assertEqual(_group_of(sequences[2], {"Chordata": "#111111"}), "N/A")
-            self.assertEqual(_group_of(sequences[2], None), "N/A")
 
-    def test_groups_by_superkingdom_without_a_color_map(self) -> None:
+    def test_atlasea_colors_eukaryotes_without_a_listed_phylum_as_eukaryota(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             sequences = _read_sequences(_taxonomy(directory))
+            color_map = _read_color_map(theme_colors("atlasea"))
 
-            self.assertEqual(_group_of(sequences[0], None), "Eukaryota")
+            self.assertEqual(_group_of(sequences[0], color_map), "Chordata")
+            self.assertEqual(_group_of(sequences[1], color_map), "Eukaryota")
+
+
+class ThemeTest(unittest.TestCase):
+    def test_every_packaged_theme_is_a_valid_color_map(self) -> None:
+        self.assertIn("superkingdom", THEMES)
+        self.assertIn("atlasea", THEMES)
+        for theme in THEMES:
+            with self.subTest(theme=theme):
+                _read_color_map(theme_colors(theme))
+
+    def test_rejects_an_unknown_theme(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unknown theme: rainbow"):
+            theme_colors("rainbow")
 
 
 class ColorMapTest(unittest.TestCase):
@@ -158,6 +179,26 @@ class HumanUnitTest(unittest.TestCase):
         self.assertEqual(_human_bp(1_000_000), "1 Mbp")
         self.assertEqual(_human_bp(696_502_509), "696.5 Mbp")
         self.assertEqual(_human_bp(2_400_000_000), "2.4 Gbp")
+
+    def test_compacts_to_three_significant_digits(self) -> None:
+        self.assertEqual(_compact_bp(900), "900 bp")
+        self.assertEqual(_compact_bp(410_440), "410 kbp")
+        self.assertEqual(_compact_bp(53_530_000), "53.5 Mbp")
+        self.assertEqual(_compact_bp(999_600), "1 Mbp")
+
+
+class LegendOrderTest(unittest.TestCase):
+    def test_orders_taxa_by_total_length_with_other_and_unassigned_last(self) -> None:
+        ordered, _ = _palette(
+            ["Bacteria", "N/A", "Eukaryota", "other", "Eukaryota"],
+            [300, 9_000, 200, 5_000, 200],
+            {"Bacteria": "green", "Eukaryota": "red"},
+        )
+
+        self.assertEqual(ordered, ["Eukaryota", "Bacteria", "other", "N/A"])
+
+    def test_fills_legend_columns_so_they_read_row_by_row(self) -> None:
+        self.assertEqual(_row_major(["a", "b", "c", "d", "e"], 2), ["a", "c", "e", "b", "d"])
 
 
 class RenderTest(unittest.TestCase):

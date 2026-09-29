@@ -18,7 +18,9 @@ from plot_summary_comparison import (  # noqa: E402
     main,
     plot_summary_comparison,
 )
-from plot_summary_graph import _palette  # noqa: E402
+from plot_summary_graph import _palette, _read_color_map, theme_colors  # noqa: E402
+
+_SUPERKINGDOM = _read_color_map(theme_colors("superkingdom"))
 
 _COLUMNS = (
     "sequence_name",
@@ -105,22 +107,26 @@ class TaxonomyFileTest(unittest.TestCase):
 
 
 class SharedPaletteTest(unittest.TestCase):
-    def test_gives_one_color_per_taxon_across_every_run(self) -> None:
+    def test_orders_taxa_by_total_length_across_every_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             runs = [
-                _load_run("Fish", _run_directory(directory, "fish", _FISH), None),
-                _load_run("Sponge", _run_directory(directory, "sponge", _SPONGE), None),
+                _load_run("Fish", _run_directory(directory, "fish", _FISH), _SUPERKINGDOM),
+                _load_run(
+                    "Sponge", _run_directory(directory, "sponge", _SPONGE), _SUPERKINGDOM
+                ),
             ]
             ordered, palette = _palette(
-                [group for run in runs for group in run.groups], None
+                [group for run in runs for group in run.groups],
+                [sequence.length for run in runs for sequence in run.sequences],
+                _SUPERKINGDOM,
             )
 
-            self.assertEqual(ordered, ["Bacteria", "Archaea", "Eukaryota", "N/A"])
+            self.assertEqual(ordered, ["Eukaryota", "Bacteria", "Archaea", "N/A"])
             self.assertEqual(len(set(palette.values())), len(ordered))
 
     def test_labels_unassigned_sequences_in_the_legend(self) -> None:
-        ordered, palette = _palette(["Bacteria", "N/A"], None)
+        ordered, palette = _palette(["Bacteria", "N/A"], [10, 10], _SUPERKINGDOM)
         labels = [handle.get_label() for handle in _legend_handles(ordered, palette)]
 
         self.assertEqual(labels, ["Bacteria", _UNASSIGNED_LABEL])
@@ -136,14 +142,14 @@ class LoadRunTest(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(ValueError, "coverage above 0"):
-                _load_run("Flat", directory, None)
+                _load_run("Flat", directory, _SUPERKINGDOM)
 
     def test_rejects_an_empty_table(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = _run_directory(Path(temporary_directory), "empty", ())
 
             with self.assertRaisesRegex(ValueError, "any assembly sequence"):
-                _load_run("Empty", directory, None)
+                _load_run("Empty", directory, _SUPERKINGDOM)
 
 
 class PlotSummaryComparisonTest(unittest.TestCase):

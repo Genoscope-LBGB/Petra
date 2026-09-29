@@ -403,6 +403,38 @@ class RunCliTest(unittest.TestCase):
         self.assertIn("--host-taxon requires --rrna.", _flatten(result.output))
         launch.assert_not_called()
 
+    def test_resolves_a_summary_theme_to_its_packaged_color_file(self) -> None:
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app, self.run_arguments("--summary-theme", "atlasea")
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        colors = launch.call_args.kwargs["workflow_config"]["summary_colors"]
+        self.assertEqual(colors.name, "atlasea.tsv")
+        self.assertTrue(colors.is_file())
+
+    def test_rejects_a_summary_theme_combined_with_summary_colors(self) -> None:
+        colors = self.directory / "colors.tsv"
+        colors.write_text("Bacteria\tgreen\n", encoding="utf-8")
+        with (
+            patch("petra.cli._require_executables"),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                self.run_arguments(
+                    "--summary-colors", str(colors), "--summary-theme", "atlasea"
+                ),
+            )
+
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("cannot be combined with", _flatten(result.output))
+        launch.assert_not_called()
+
     def test_accepts_a_host_taxon_without_a_phylum(self) -> None:
         with (
             patch(
