@@ -77,6 +77,7 @@ _UNIDENTIFIED_TAXID = "32644"
 _PR2_COMPARTMENTS = (":apic", ":chro", ":mito", ":nucl", ":plas")
 _PR2_DOMAINS = frozenset({"Eukaryota", "Bacteria", "Archaea"})
 _RANK_PREFIX = re.compile(r"^[a-z]__")
+_EUKARYOME_PLACEHOLDER = "unclassified"
 _DOWNLOAD_TIMEOUT_SECONDS = 60
 
 logger = logging.getLogger(__name__)
@@ -759,7 +760,7 @@ def _write_eukaryome_records(
     source: Path,
     destination,
 ) -> tuple[dict[str, tuple[str, ...]], set[str]]:
-    """Write EUKARYOME records and return their verbatim ranks and accessions."""
+    """Write EUKARYOME records and return their searchable ranks and accessions."""
     ranks_by_identifier: dict[str, tuple[str, ...]] = {}
     accessions: set[str] = set()
     for header, sequence in _iter_fasta(source):
@@ -767,17 +768,38 @@ def _write_eukaryome_records(
         identifier = fields[0]
         if not identifier or identifier in ranks_by_identifier:
             continue
-        ranks_by_identifier[identifier] = tuple(
-            rank
-            for rank in (_RANK_PREFIX.sub("", field) for field in fields[1:])
-            if rank
-        )
+        ranks_by_identifier[identifier] = _eukaryome_ranks(fields[1:])
         accessions.add(_primary_accession(identifier))
         destination.write(f">{identifier}\n{sequence}\n")
     if not ranks_by_identifier:
         raise DatabaseBuildError(f"No usable sequences found in {source}.")
     logger.info("Kept %d EUKARYOME accessions", len(accessions))
     return ranks_by_identifier, accessions
+
+
+def _eukaryome_ranks(fields: list[str]) -> tuple[str, ...]:
+    """Return the names of a EUKARYOME lineage that are safe to look up in NCBI.
+
+    TaxonKit matches names case-insensitively and against every name class, so
+    two EUKARYOME conventions resolve to unrelated taxa: the 'unclassified'
+    filler matches NCBI's 'unclassified sequences' (no ranked lineage), and the
+    bare species epithet matches homonymous genera ('japonica' -> Japonica).
+    Species are therefore looked up as binomials, and only under a named genus.
+    """
+    ranks: list[str] = []
+    genus = ""
+    for field in fields:
+        name = _RANK_PREFIX.sub("", field)
+        if not name or name == _EUKARYOME_PLACEHOLDER:
+            continue
+        if field.startswith("g__"):
+            genus = name
+        elif field.startswith("s__"):
+            if not genus:
+                continue
+            name = f"{genus} {name}"
+        ranks.append(name)
+    return tuple(ranks)
 
 
 def _resolve_taxids(
