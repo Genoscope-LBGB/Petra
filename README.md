@@ -37,14 +37,17 @@ to `petra.dmnd` in the same output directory:
 - `petra.ssu.fasta`, a BLAST database of SILVA SSURef NR99 and PR2, carrying
   NCBI taxon identifiers.
 - `petra.lsu.fasta`, a BLAST database of SILVA LSURef NR99 and EUKARYOME,
-  carrying the lineage in each sequence header.
+  carrying NCBI taxon identifiers.
 
 This part requires `makeblastdb`, `cmpress` and `taxonkit` on `PATH`. PETRA
 passes the bundled `database/taxonomy/` directory to TaxonKit while constructing
 the RNA databases. SILVA sequences of unidentified organisms are discarded, and
 PR2 sequences already present in SILVA are dropped so the SSU database holds
-each accession once. Other sources are downloaded into the output directory and
-removed after the build.
+each accession once. PR2 and EUKARYOME sequences take the NCBI taxon of the
+deepest name in their lineage that TaxonKit recognizes. EUKARYOME
+`unclassified` fillers are skipped, and its species epithets are looked up
+as binomials under their genus. Other sources are downloaded into the output
+directory and removed after the build.
 
 Because the DIAMOND build takes several hours, the two halves can be run
 separately. `--skip-diamond-db` leaves an existing `petra.dmnd` untouched:
@@ -103,13 +106,12 @@ Sequences with taxonomic evidence below this minimum have all ranks set to
 `N/A` and `unassigned_reason` set to `insufficient_support`. Their gene-level
 evidence remains in `predictions.gene_taxonomy.tsv`.
 
-Sequences passing the gate use the ordinary observed `--alpha` majority
-(default `0.5`), with all aligned unigenes in the denominator. Ranks are
-resolved top-down: at each rank, only unigenes that agree with the consensus at
-every higher rank vote. Ranks that the winning
-clade lacks (for example, the kingdom of Ciliophora) do not stop the descent.
-If no rank reaches a unique alpha majority despite taxonomic evidence, the
-reason is `no_consensus`.
+Sequences passing the gate assign a taxon only when it holds more than the
+`--alpha` share (default `0.5`, a strict majority) of all aligned unigenes.
+Ranks are resolved top-down: at each rank, only unigenes that agree with the
+consensus at every higher rank vote. Ranks that the winning clade lacks (for
+example, the kingdom of Ciliophora) do not stop the descent. If no rank
+exceeds `--alpha` despite taxonomic evidence, the reason is `no_consensus`.
 
 #### Optional rRNA and tRNA analyses
 
