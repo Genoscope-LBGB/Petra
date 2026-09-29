@@ -204,9 +204,9 @@ A theme is a color file packaged with PETRA in `src/petra/themes/`:
 - `superkingdom` (default): one color per superkingdom.
 - `atlasea`: one color per eukaryotic phylum commonly met in ATLASea samples,
   plus the Dinophyceae and Phaeophyceae classes, which have no phylum in the NCBI
-  taxonomy. Bacteria, Archaea and Viruses keep their superkingdom color, and other
-  eukaryotes are drawn with the Eukaryota color, so eukaryotic contaminants stand
-  out from the host.
+  taxonomy, so eukaryotic contaminants stand out from the host. Every
+  superkingdom keeps its default color: other eukaryotes, including those
+  without an assigned phylum, stay red.
 
 `--summary-colors` replaces the theme with your own two-column TSV of taxonomic
 rank and color, in the same format as the theme files:
@@ -244,6 +244,12 @@ petra-compare \
 
 Every panel shares one color file: a theme with `--theme` (`superkingdom` by
 default) or your own TSV with `--colors`.
+
+To keep the legend short, a taxon keeps its own color only if it holds more
+than 5% of the bases of at least one assembly. Smaller taxa take their
+superkingdom color instead, which is the one the theme uses for that
+superkingdom when it lists it. Change the threshold with `--min-share`, or
+set it to `0` to color every taxon.
 
 ### Filtering the prediction table
 
