@@ -11,6 +11,7 @@ sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 from assign_taxonomy import TAXONOMIC_RANKS  # noqa: E402
 from plot_summary_comparison import (  # noqa: E402
     _UNASSIGNED_LABEL,
+    _keep_major_taxa,
     _legend_handles,
     _load_run,
     _panel_letter,
@@ -150,6 +151,41 @@ class LoadRunTest(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "any assembly sequence"):
                 _load_run("Empty", directory, _SUPERKINGDOM)
+
+
+class KeepMajorTaxaTest(unittest.TestCase):
+    def test_recolors_taxa_minor_in_every_run_by_superkingdom(self) -> None:
+        color_map = {
+            taxon: "#111111"
+            for taxon in ("Chordata", "Rotifera", "Arthropoda", "Mollusca", "Pseudomonadota")
+        }
+        eukaryote = {"domain": "Eukaryota"}
+        fish = (
+            _row("chordata", 880_000, 42.0, 40, {**eukaryote, "phylum": "Chordata"}),
+            _row("rotifera", 60_000, 42.0, 40, {**eukaryote, "phylum": "Rotifera"}),
+            _row("arthropoda", 40_000, 42.0, 40, {**eukaryote, "phylum": "Arthropoda"}),
+            _row(
+                "bacterium", 10_000, 60.0, 5, {"domain": "Bacteria", "phylum": "Pseudomonadota"}
+            ),
+            _row("unassigned", 10_000, 42.0, 5, {}, "no_consensus"),
+        )
+        sponge = (
+            _row("mollusca", 99_000, 40.0, 30, {**eukaryote, "phylum": "Mollusca"}),
+            _row("rotifera", 1_000, 40.0, 30, {**eukaryote, "phylum": "Rotifera"}),
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            runs = [
+                _load_run("Fish", _run_directory(directory, "fish", fish), color_map),
+                _load_run("Sponge", _run_directory(directory, "sponge", sponge), color_map),
+            ]
+            fish_run, sponge_run = _keep_major_taxa(runs, 5.0, _SUPERKINGDOM)
+
+        self.assertEqual(
+            fish_run.groups, ("Chordata", "Rotifera", "Eukaryota", "Bacteria", "N/A")
+        )
+        # Rotifera clears the share in the fish only, yet keeps its color here.
+        self.assertEqual(sponge_run.groups, ("Mollusca", "Rotifera"))
 
 
 class PlotSummaryComparisonTest(unittest.TestCase):
