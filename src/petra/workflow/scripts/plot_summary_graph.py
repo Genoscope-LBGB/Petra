@@ -20,7 +20,14 @@ from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.gridspec import GridSpec  # noqa: E402
 from matplotlib.legend import Legend  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
-from matplotlib.patches import Rectangle  # noqa: E402
+from matplotlib.offsetbox import (  # noqa: E402
+    AnchoredOffsetbox,
+    DrawingArea,
+    HPacker,
+    TextArea,
+    VPacker,
+)
+from matplotlib.patches import Circle, Rectangle  # noqa: E402
 from matplotlib.ticker import FuncFormatter, NullFormatter  # noqa: E402
 
 from assign_taxonomy import TAXONOMIC_RANKS  # noqa: E402
@@ -54,12 +61,9 @@ _LEGEND_PANELS = (
     "assignment-status",
 )
 
-_SUPERKINGDOM_COLORS = {
-    "Bacteria": "#00CD00",
-    "Archaea": "#0000CD",
-    "Viruses": "#CD00CD",
-    "Eukaryota": "#B22222",
-}
+THEMES_DIRECTORY = Path(__file__).resolve().parents[2] / "themes"
+THEMES = tuple(sorted(path.stem for path in THEMES_DIRECTORY.glob("*.tsv")))
+DEFAULT_THEME = "superkingdom"
 _UNASSIGNED_GROUP = "N/A"
 _UNASSIGNED_COLOR = "#FFFFFF"
 _OTHER_GROUP = "other"
@@ -69,6 +73,7 @@ _PANEL_BACKGROUND = "#EBEBEB"
 _GRID_COLOR = "#FFFFFF"
 _MUTED_COLOR = "#555555"
 _FILL_ALPHA = 0.75
+_BLOB_EDGE_WIDTH = 0.6
 
 _ASSIGNED_STATUS = "assigned"
 _STATUS_COLORS = {
@@ -92,7 +97,8 @@ _LEGEND_BOTTOM = 0.105
 _MINIMUM_LEGEND_GAP = 0.005
 _LEGEND_GAP_LINES = 3.0
 _MINIMUM_LEGEND_SCALE = 0.4
-_LEGEND_FIT_ATTEMPTS = 4
+_LEGEND_FIT_ATTEMPTS = 5
+_LEGEND_WRAP_COLUMNS = 2
 _STATUS_BAR_HEIGHT = 0.05
 _STATUS_BAR_PADDING = 0.012
 _STATUS_TICK_WIDTH = 0.026
@@ -204,6 +210,13 @@ def _read_sequences(source: Path) -> list[AssemblySequence]:
     return sequences
 
 
+def theme_colors(name: str) -> Path:
+    """Return the color file of a packaged theme."""
+    if name not in THEMES:
+        raise ValueError(f"Unknown theme: {name}. Available themes: {', '.join(THEMES)}.")
+    return THEMES_DIRECTORY / f"{name}.tsv"
+
+
 def _read_color_map(source: Path) -> dict[str, str]:
     """Read a two-column taxon/color TSV, tolerating one header line."""
     colors: dict[str, str] = {}
@@ -239,13 +252,10 @@ def _read_color_map(source: Path) -> dict[str, str]:
     return colors
 
 
-def _group_of(sequence: AssemblySequence, color_map: dict[str, str] | None) -> str:
-    """Return the color group: superkingdom by default, deepest mapped taxon otherwise."""
+def _group_of(sequence: AssemblySequence, color_map: dict[str, str]) -> str:
+    """Return the color group: the deepest assigned taxon found in the color map."""
     if not sequence.assigned:
         return _UNASSIGNED_GROUP
-    if color_map is None:
-        domain = sequence.lineage[0]
-        return domain if domain != _MISSING_TAXON else _OTHER_GROUP
     for taxon in reversed(sequence.lineage):
         if taxon != _MISSING_TAXON and taxon in color_map:
             return taxon
@@ -253,17 +263,18 @@ def _group_of(sequence: AssemblySequence, color_map: dict[str, str] | None) -> s
 
 
 def _palette(
-    groups: SequenceABC[str], color_map: dict[str, str] | None
+    groups: SequenceABC[str], lengths: SequenceABC[int], color_map: dict[str, str]
 ) -> tuple[list[str], dict[str, str]]:
-    used = set(groups)
-    if color_map is None:
-        ordered = [group for group in _SUPERKINGDOM_COLORS if group in used]
-        palette = {group: _SUPERKINGDOM_COLORS[group] for group in ordered}
-    else:
-        ordered = [group for group in color_map if group in used]
-        palette = {group: color_map[group] for group in ordered}
+    """Order the colored groups by decreasing total length; 'other' and unassigned last."""
+    totals: dict[str, int] = {}
+    for group, length in zip(groups, lengths, strict=True):
+        totals[group] = totals.get(group, 0) + length
+    ordered = sorted(
+        (group for group in color_map if group in totals), key=lambda group: -totals[group]
+    )
+    palette = {group: color_map[group] for group in ordered}
     for group, color in ((_OTHER_GROUP, _OTHER_COLOR), (_UNASSIGNED_GROUP, _UNASSIGNED_COLOR)):
-        if group in used:
+        if group in totals:
             ordered.append(group)
             palette[group] = color
     return ordered, palette
@@ -302,6 +313,13 @@ def _human_bp(value: float) -> str:
     if divisor == 1.0:
         return f"{value:.0f} bp"
     return f"{f'{value / divisor:.2f}'.rstrip('0').rstrip('.')} {name}"
+
+
+def _compact_bp(value: float) -> str:
+    """Round to three significant digits, e.g. 410.44 kbp -> 410 kbp."""
+    rounded = float(f"{value:.3g}")
+    name, divisor = _bp_unit(rounded)
+    return f"{rounded / divisor:g} {name}"
 
 
 def _round_significant(value: float) -> float:
@@ -412,7 +430,7 @@ def _draw_blobplot(
         marker="o",
         facecolor=[to_rgba(palette[groups[index]], _FILL_ALPHA) for index in plotted],
         edgecolor=_EDGE_COLOR,
-        linewidth=0.6,
+        linewidth=_BLOB_EDGE_WIDTH,
         zorder=3,
     )
     if show_longest:
@@ -546,7 +564,7 @@ def _taxonomy_handles(
                 markerfacecolor=to_rgba(palette[group], _FILL_ALPHA),
                 markeredgecolor=_EDGE_COLOR,
                 markeredgewidth=0.6,
-                label=f"{group}  ({len(selected)} seq, {_human_bp(bases)})",
+                label=f"{group}  {_compact_bp(bases)} · {len(selected)}",
             )
         )
     return handles
@@ -575,22 +593,6 @@ def _longest_handles(
             ),
         )
         for rank in range(min(len(_LONGEST_MARKERS), len(sequences)))
-    ]
-
-
-def _length_handles(values: SequenceABC[float], scale) -> list[Line2D]:
-    return [
-        Line2D(
-            [],
-            [],
-            marker="o",
-            linestyle="none",
-            markersize=math.sqrt(scale(value)),
-            markerfacecolor="white",
-            markeredgecolor=_EDGE_COLOR,
-            label=_human_bp(value),
-        )
-        for value in values
     ]
 
 
@@ -652,6 +654,19 @@ class _LegendBlock:
     labels: list[str] | None = None
     extra_height: float = 0.0
     keywords: dict = field(default_factory=dict)
+    # Split into columns, filled row by row, when one column does not fit.
+    wrap: bool = False
+
+
+@dataclass(frozen=True)
+class _SizeKey:
+    """Circles at their plotted size in one row, each labelled underneath."""
+
+    title: str
+    values: list[float]
+    areas: list[float]
+    font_size: float
+    extra_height: float = 0.0
 
 
 def _fit_text_width(figure: Figure, artist, available: float) -> None:
@@ -665,65 +680,176 @@ def _fit_text_width(figure: Figure, artist, available: float) -> None:
         artist.set_fontsize(artist.get_fontsize() * max(available / width, 0.8))
 
 
-def _create_legend_blocks(
-    axis_legend: Axes, blocks: SequenceABC[_LegendBlock], fonts: Fonts, scale: float
-) -> list[Legend]:
-    created: list[Legend] = []
-    for block in blocks:
-        keywords = dict(block.keywords)
-        if block.labels is not None:
-            keywords["labels"] = block.labels
-        legend = axis_legend.legend(
-            handles=block.handles,
-            title=block.title,
-            loc="upper left",
-            bbox_to_anchor=(_LEGEND_LEFT, 0.5),
-            frameon=False,
-            title_fontproperties={"size": fonts.legend_title * scale},
-            alignment="left",
-            fontsize=block.font_size * scale,
-            **keywords,
+def _row_major(items: SequenceABC, columns: int) -> list:
+    """Reorder items so a legend, which fills columns first, reads row by row."""
+    return [item for column in range(columns) for item in items[column::columns]]
+
+
+def _legend_box(
+    axis_legend: Axes, block: _LegendBlock, fonts: Fonts, scale: float, columns: int
+) -> Legend:
+    keywords = dict(block.keywords)
+    handles, labels = list(block.handles), block.labels
+    if columns > 1:
+        handles = _row_major(handles, columns)
+        labels = _row_major(labels, columns) if labels is not None else None
+        keywords["ncol"] = columns
+        keywords.setdefault("columnspacing", 0.8)
+    if labels is not None:
+        keywords["labels"] = labels
+    font_size = block.font_size * scale
+    # The handle box grows to hold the largest marker; otherwise the marker
+    # spills out of the measured legend and overlaps the next block.
+    marker_extent = max(
+        (
+            handle.get_markersize() * scale + handle.get_markeredgewidth()
+            for handle in handles
+            if isinstance(handle, Line2D)
+        ),
+        default=0.0,
+    )
+    if marker_extent > 0:
+        keywords["markerscale"] = scale
+        keywords["handleheight"] = max(
+            keywords.get("handleheight", 0.7), marker_extent / font_size
         )
-        axis_legend.add_artist(legend)
-        created.append(legend)
+        keywords["handlelength"] = max(
+            keywords.get("handlelength", 2.0), marker_extent / font_size
+        )
+    return axis_legend.legend(
+        handles=handles,
+        title=block.title,
+        loc="upper left",
+        bbox_to_anchor=(_LEGEND_LEFT, 0.5),
+        frameon=False,
+        title_fontproperties={"size": fonts.legend_title * scale},
+        alignment="left",
+        fontsize=font_size,
+        **keywords,
+    )
+
+
+def _size_key_box(
+    axis_legend: Axes, key: _SizeKey, fonts: Fonts, scale: float
+) -> AnchoredOffsetbox:
+    """Draw the circles at their plotted size; only the text follows the scale."""
+    font_size = key.font_size * scale
+    diameters = [math.sqrt(area) for area in key.areas]
+    height = max(diameters) + _BLOB_EDGE_WIDTH
+    columns = []
+    for value, diameter in zip(key.values, diameters, strict=True):
+        width = diameter + _BLOB_EDGE_WIDTH
+        drawing = DrawingArea(width, height)
+        drawing.add_artist(
+            Circle(
+                (width / 2.0, height / 2.0),
+                diameter / 2.0,
+                facecolor="white",
+                edgecolor=_EDGE_COLOR,
+                linewidth=_BLOB_EDGE_WIDTH,
+            )
+        )
+        label = TextArea(_human_bp(value), textprops={"fontsize": font_size})
+        columns.append(
+            VPacker(children=[drawing, label], align="center", pad=0, sep=font_size * 0.3)
+        )
+    title = TextArea(key.title, textprops={"fontsize": fonts.legend_title * scale})
+    content = VPacker(
+        children=[title, HPacker(children=columns, align="top", pad=0, sep=font_size)],
+        align="left",
+        pad=0,
+        sep=font_size * 0.5,
+    )
+    # Same paddings as a legend, so titles line up down the column.
+    return AnchoredOffsetbox(
+        loc="upper left",
+        child=content,
+        pad=0.4,
+        borderpad=0.5,
+        prop={"size": font_size},
+        frameon=False,
+        bbox_to_anchor=(_LEGEND_LEFT, 0.5),
+        bbox_transform=axis_legend.transAxes,
+    )
+
+
+def _create_legend_blocks(
+    axis_legend: Axes,
+    blocks: SequenceABC[_LegendBlock | _SizeKey],
+    fonts: Fonts,
+    scale: float,
+    columns: int,
+) -> list[Legend | AnchoredOffsetbox]:
+    created: list[Legend | AnchoredOffsetbox] = []
+    for block in blocks:
+        if isinstance(block, _SizeKey):
+            artist = _size_key_box(axis_legend, block, fonts, scale)
+        else:
+            artist = _legend_box(
+                axis_legend, block, fonts, scale, columns if block.wrap else 1
+            )
+        axis_legend.add_artist(artist)
+        created.append(artist)
     return created
 
 
 def _draw_legend_column(
     figure: Figure,
     axis_legend: Axes,
-    blocks: SequenceABC[_LegendBlock],
+    blocks: SequenceABC[_LegendBlock | _SizeKey],
     fonts: Fonts,
     top: float,
 ) -> float:
     """Lay the column out with one shared gap, shrinking fonts only if it overflows.
 
-    The last block may own the assignment-status bars through ``extra_height``; it stays
+    A wrapping block is first split into columns, which costs no font size. The last
+    block may own the assignment-status bars through ``extra_height``; it stays
     anchored to the bottom so its legend never drifts away from its bars.
     """
     position = axis_legend.get_position()
     available_height = top - _LEGEND_BOTTOM
-    available_width = position.width * (1.0 - _LEGEND_LEFT)
+    left = position.x0 + _LEGEND_LEFT * position.width
+    available_width = position.x1 - left
+    wraps = any(isinstance(block, _LegendBlock) and block.wrap for block in blocks)
+    columns = 1
     scale = 1.0
-    for _ in range(_LEGEND_FIT_ATTEMPTS):
-        created = _create_legend_blocks(axis_legend, blocks, fonts, scale)
+    previous: tuple[float, float] | None = None
+    for attempt in range(_LEGEND_FIT_ATTEMPTS):
+        created = _create_legend_blocks(axis_legend, blocks, fonts, scale, columns)
         figure.canvas.draw()
         inverted = figure.transFigure.inverted()
         boxes = [inverted.transform_bbox(item.get_window_extent()) for item in created]
         heights = [
             box.height + block.extra_height for box, block in zip(boxes, blocks)
         ]
-        reserved = _MINIMUM_LEGEND_GAP * max(len(created) - 1, 0)
-        overflow = max(
-            sum(heights) / max(available_height - reserved, 1e-6),
-            max(box.width for box in boxes) / available_width,
-            1.0,
+        room = max(
+            available_height - _MINIMUM_LEGEND_GAP * max(len(created) - 1, 0), 1e-6
         )
-        if overflow <= 1.0 or scale <= _MINIMUM_LEGEND_SCALE:
+        total = sum(heights)
+        # From the anchor, so the pad a legend keeps from it counts too.
+        widest = max(box.x1 for box in boxes) - left
+        if (
+            (total <= room and widest <= available_width)
+            or scale <= _MINIMUM_LEGEND_SCALE
+            or attempt == _LEGEND_FIT_ATTEMPTS - 1
+        ):
             break
         for item in created:
             item.remove()
-        scale = max(scale / overflow, _MINIMUM_LEGEND_SCALE)
+        if wraps and columns == 1:
+            columns = _LEGEND_WRAP_COLUMNS
+            continue
+        # True-size circles make part of the height independent of the scale, so
+        # once two passes exist the next one follows the line through both.
+        height_scale = scale * room / total
+        if previous is not None and previous[0] != scale:
+            slope = (previous[1] - total) / (previous[0] - scale)
+            if slope > 0:
+                height_scale = scale + (room - total) / slope
+        previous = (scale, total)
+        scale = max(
+            min(height_scale, scale * available_width / widest), _MINIMUM_LEGEND_SCALE
+        )
 
     bottom_anchored = blocks[-1].extra_height > 0
     bottom = _LEGEND_BOTTOM + (heights[-1] if bottom_anchored else 0.0)
@@ -735,7 +861,7 @@ def _draw_legend_column(
     cap = _LEGEND_GAP_LINES * fonts.base * scale / 72.0 / figure.get_figheight()
     gap = min(max(even_gap, _MINIMUM_LEGEND_GAP), cap)
 
-    def anchor(legend: Legend, block_top: float) -> None:
+    def anchor(legend: Legend | AnchoredOffsetbox, block_top: float) -> None:
         legend.set_bbox_to_anchor(
             (_LEGEND_LEFT, (block_top - position.y0) / position.height),
             transform=axis_legend.transAxes,
@@ -774,14 +900,14 @@ def plot_summary_graph(
     enabled = {panel for panel in PANELS if panel not in disabled}
     fonts = Fonts(base=font_size)
 
-    color_map = _read_color_map(colors) if colors is not None else None
+    color_map = _read_color_map(colors if colors is not None else theme_colors(DEFAULT_THEME))
     sequences = sorted(_read_sequences(taxonomy), key=lambda item: -item.length)
+    lengths = [sequence.length for sequence in sequences]
     groups = [_group_of(sequence, color_map) for sequence in sequences]
-    ordered_groups, palette = _palette(groups, color_map)
+    ordered_groups, palette = _palette(groups, lengths, color_map)
     statuses = [_status_of(sequence) for sequence in sequences]
     ordered_statuses = [status for status in _STATUS_COLORS if status in set(statuses)]
 
-    lengths = [sequence.length for sequence in sequences]
     total = sum(lengths)
     unit = _bp_unit(float(total))
     scale = _area_scale(lengths)
@@ -897,15 +1023,16 @@ def plot_summary_graph(
                 )
                 _fit_text_width(figure, artist, position.width)
 
-        blocks: list[_LegendBlock] = []
+        blocks: list[_LegendBlock | _SizeKey] = []
         if "taxonomy-legend" in enabled:
             blocks.append(
                 _LegendBlock(
-                    title="taxon" if color_map is not None else "superkingdom",
+                    title="taxon (length · sequences)",
                     handles=_taxonomy_handles(
                         sequences, groups, ordered_groups, palette
                     ),
                     font_size=fonts.legend,
+                    wrap=True,
                 )
             )
         if "longest-sequences" in enabled:
@@ -918,12 +1045,13 @@ def plot_summary_graph(
                 )
             )
         if "length-legend" in enabled:
+            values = _length_legend_values(lengths)
             blocks.append(
-                _LegendBlock(
+                _SizeKey(
                     title="Length",
-                    handles=_length_handles(_length_legend_values(lengths), scale),
+                    values=values,
+                    areas=[scale(value) for value in values],
                     font_size=fonts.legend,
-                    keywords={"labelspacing": 1.3, "handletextpad": 1.5},
                 )
             )
         if "assignment-status" in enabled:
@@ -999,14 +1127,21 @@ def _parse_arguments(argv: SequenceABC[str] | None = None) -> argparse.Namespace
         required=True,
         help="Image to write; the extension selects the format.",
     )
-    parser.add_argument(
+    color_source = parser.add_mutually_exclusive_group()
+    color_source.add_argument(
         "--colors",
         type=Path,
         help=(
             "Two-column TSV of taxon and color. A sequence is colored with the "
             "deepest assigned rank found in the file; assigned sequences without a "
-            "match are colored as 'other'. Superkingdom colors are used when omitted."
+            "match are colored as 'other'."
         ),
+    )
+    color_source.add_argument(
+        "--theme",
+        choices=THEMES,
+        default=DEFAULT_THEME,
+        help="Packaged color file to use instead of --colors.",
     )
     parser.add_argument(
         "--disable-panel",
@@ -1035,7 +1170,7 @@ def main(argv: SequenceABC[str] | None = None) -> None:
     plot_summary_graph(
         arguments.taxonomy,
         arguments.output,
-        colors=arguments.colors,
+        colors=arguments.colors or theme_colors(arguments.theme),
         disabled_panels=arguments.disable_panel,
         font_size=arguments.font_size,
         width=arguments.width,

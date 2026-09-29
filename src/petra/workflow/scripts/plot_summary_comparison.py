@@ -32,6 +32,8 @@ if _SCRIPTS_DIRECTORY not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIRECTORY)
 
 from plot_summary_graph import (  # noqa: E402
+    DEFAULT_THEME,
+    THEMES,
     AssemblySequence,
     Fonts,
     _EDGE_COLOR,
@@ -49,6 +51,8 @@ from plot_summary_graph import (  # noqa: E402
     _palette,
     _read_color_map,
     _read_sequences,
+    _row_major,
+    theme_colors,
     to_rgba,
 )
 
@@ -106,7 +110,7 @@ def _taxonomy_file(path: Path) -> Path:
     return source
 
 
-def _load_run(name: str, path: Path, color_map: dict[str, str] | None) -> ComparedRun:
+def _load_run(name: str, path: Path, color_map: dict[str, str]) -> ComparedRun:
     source = _taxonomy_file(path)
     sequences = tuple(_read_sequences(source))
     if not sequences:
@@ -194,14 +198,14 @@ def _fit_axis_labels(figure: Figure, axes) -> None:
 
 
 def _draw_legend(figure: Figure, handles: SequenceABC[Line2D], fonts: Fonts) -> Legend:
-    """Lay the shared legend on one row, wrapping only if it overflows."""
+    """Lay the shared legend on one row, wrapping row by row only if it overflows."""
     available = 1.0 - 2.0 * _MARGIN
     legend = None
     for columns in range(len(handles), 0, -1):
         if legend is not None:
             legend.remove()
         legend = figure.legend(
-            handles=handles,
+            handles=_row_major(handles, columns),
             loc="upper center",
             bbox_to_anchor=(0.5, 1.0 - _MARGIN),
             ncol=columns,
@@ -239,10 +243,12 @@ def plot_summary_comparison(
         if value <= 0:
             raise ValueError(f"{label} must be greater than zero.")
 
-    color_map = _read_color_map(colors) if colors is not None else None
+    color_map = _read_color_map(colors if colors is not None else theme_colors(DEFAULT_THEME))
     loaded = [_load_run(name, path, color_map) for name, path in runs]
     ordered_groups, palette = _palette(
-        [group for run in loaded for group in run.groups], color_map
+        [group for run in loaded for group in run.groups],
+        [sequence.length for run in loaded for sequence in run.sequences],
+        color_map,
     )
 
     fonts = Fonts(base=font_size)
@@ -435,15 +441,21 @@ def _parse_arguments(argv: SequenceABC[str] | None = None) -> argparse.Namespace
         type=Path,
         help="Image to write; the extension selects the format.",
     )
-    parser.add_argument(
+    color_source = parser.add_mutually_exclusive_group()
+    color_source.add_argument(
         "--colors",
         type=Path,
         help=(
             "Two-column TSV of taxon and color shared by every panel. A sequence is "
             "colored with the deepest assigned rank found in the file; assigned "
-            "sequences without a match are colored as 'other'. Superkingdom colors "
-            "are used when omitted."
+            "sequences without a match are colored as 'other'."
         ),
+    )
+    color_source.add_argument(
+        "--theme",
+        choices=THEMES,
+        default=DEFAULT_THEME,
+        help="Packaged color file to use instead of --colors.",
     )
     parser.add_argument(
         "--font-size",
@@ -474,7 +486,7 @@ def main(argv: SequenceABC[str] | None = None) -> None:
     plot_summary_comparison(
         list(zip(arguments.name, arguments.directory)),
         arguments.output,
-        colors=arguments.colors,
+        colors=arguments.colors or theme_colors(arguments.theme),
         font_size=arguments.font_size,
         panel_width=arguments.panel_width,
         height=arguments.height,
