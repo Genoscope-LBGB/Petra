@@ -3,6 +3,7 @@
 import argparse
 import csv
 import math
+import sys
 import traceback
 from collections.abc import Iterable, Sequence as SequenceABC
 from contextlib import redirect_stderr, redirect_stdout
@@ -29,6 +30,13 @@ from matplotlib.offsetbox import (  # noqa: E402
 )
 from matplotlib.patches import Circle, Rectangle  # noqa: E402
 from matplotlib.ticker import FuncFormatter, NullFormatter  # noqa: E402
+
+# Snakemake runs these scripts as files, so they import each other flat. The
+# installed entry point is imported as a module instead and has to say where
+# the siblings live.
+_SCRIPTS_DIRECTORY = str(Path(__file__).resolve().parent)
+if _SCRIPTS_DIRECTORY not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIRECTORY)
 
 from assign_taxonomy import TAXONOMIC_RANKS  # noqa: E402
 
@@ -1180,6 +1188,14 @@ def main(argv: SequenceABC[str] | None = None) -> None:
     )
 
 
+def run() -> None:
+    """Installed entry point: report a rejected request without a traceback."""
+    try:
+        main()
+    except (ValueError, OSError) as error:
+        raise SystemExit(f"Error: {error}")
+
+
 if "snakemake" in globals():
     workflow = globals()["snakemake"]
     log_path = Path(workflow.log[0])
@@ -1198,4 +1214,4 @@ if "snakemake" in globals():
                 traceback.print_exc()
                 raise
 elif __name__ == "__main__":
-    main()
+    run()

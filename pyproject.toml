@@ -45,6 +45,7 @@ test = [
 petra = "petra.cli:app"
 petra-compare = "petra.workflow.scripts.plot_summary_comparison:run"
 petra-filter = "petra.workflow.scripts.filter_predictions:run"
+petra-plot = "petra.workflow.scripts.plot_summary_graph:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/petra"]

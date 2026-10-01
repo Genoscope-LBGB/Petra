@@ -223,12 +223,19 @@ Bacteria	green
 
 A sequence then takes the color of the deepest assigned rank listed in the
 file, assigned sequences matching no rank are drawn as `other`, and unassigned
-sequences keep the unassigned color. The same graph can be rendered from an
-existing table without rerunning the workflow, with `--theme` or `--colors`:
+sequences keep the unassigned color.
+
+### Redrawing the summary graph
+
+`petra-plot` renders the same graph from an existing table without rerunning
+the workflow, for instance after filtering it with `petra-filter`:
 
 ```console
-python plot_summary_graph.py -i run-1/predictions.final.tsv -o summary.png --theme atlasea
+petra-plot -i run-1/predictions.final.tsv -o summary.png --theme atlasea
 ```
+
+It takes a theme with `--theme` or your own color file with `--colors`, and
+`--disable-panel`, `--font-size`, `--title`, `--width`, `--height` and `--dpi`.
 
 ### Comparing runs
 
