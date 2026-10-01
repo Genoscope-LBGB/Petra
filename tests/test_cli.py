@@ -292,7 +292,8 @@ class RunCliTest(unittest.TestCase):
         def which_with_only_rrna_tools(executable: str) -> str | None:
             return (
                 f"/usr/bin/{executable}"
-                if executable in {"cmscan", "blastn", "taxonkit"}
+                if executable
+                in {"cmscan", "blastn", "taxonkit", "pyrodigal", "whokaryote.py"}
                 else None
             )
 
@@ -324,7 +325,11 @@ class RunCliTest(unittest.TestCase):
         self,
     ) -> None:
         def which_with_only_trna_tools(executable: str) -> str | None:
-            return f"/usr/bin/{executable}" if executable == "tRNAscan-SE" else None
+            return (
+                f"/usr/bin/{executable}"
+                if executable in {"tRNAscan-SE", "pyrodigal", "whokaryote.py"}
+                else None
+            )
 
         with (
             patch("petra.cli.shutil.which", side_effect=which_with_only_trna_tools),
@@ -348,10 +353,20 @@ class RunCliTest(unittest.TestCase):
         self.assertIs(workflow_config["trna"], True)
         self.assertEqual(workflow_config["long_reads"], [])
 
-    def test_rejects_skip_taxonomic_assignment_without_rna_analysis(self) -> None:
+    def test_skips_taxonomic_assignment_without_rna_analysis(self) -> None:
+        def which_with_only_whokaryote_tools(executable: str) -> str | None:
+            return (
+                f"/usr/bin/{executable}"
+                if executable in {"pyrodigal", "whokaryote.py"}
+                else None
+            )
+
         with (
-            patch("petra.cli._require_executables"),
-            patch("petra.cli.launch_workflow") as launch,
+            patch(
+                "petra.cli.shutil.which",
+                side_effect=which_with_only_whokaryote_tools,
+            ),
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
         ):
             result = CliRunner().invoke(
                 app,
@@ -363,9 +378,34 @@ class RunCliTest(unittest.TestCase):
                 ],
             )
 
-        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(result.exit_code, 0, result.output)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertIs(workflow_config["skip_taxonomic_assignment"], True)
+        self.assertIs(workflow_config["rrna"], False)
+        self.assertIs(workflow_config["trna"], False)
+
+    def test_skip_taxonomic_assignment_requires_whokaryote(self) -> None:
+        def which_without_whokaryote(executable: str) -> str | None:
+            return None if executable == "whokaryote.py" else f"/usr/bin/{executable}"
+
+        with (
+            patch("petra.cli.shutil.which", side_effect=which_without_whokaryote),
+            patch("petra.cli.launch_workflow") as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--trna",
+                    "--skip-taxonomic-assignment",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 1)
         self.assertIn(
-            "--skip-taxonomic-assignment requires --rrna, --trna, or both.",
+            "Required executables not found on PATH: whokaryote.py.",
             _flatten(result.output),
         )
         launch.assert_not_called()

@@ -140,10 +140,11 @@ Add `--trna` to annotate tRNAs. It requires `tRNAscan-SE` on `PATH` and writes
 `rna/predictions.trna.tsv` without pseudogenes, undetermined tRNAs or suppressor
 tRNAs, plus `rna/predictions.trna.stats`.
 
-Use `--skip-taxonomic-assignment` with `--rrna`, `--trna`, or both to run only
-the selected RNA analyses. Long reads are not required in this mode. The
-database is still required for rRNA classification, but a tRNA-only run does
-not require one:
+Use `--skip-taxonomic-assignment` to skip the protein-based taxonomic
+assignment. In this mode PETRA runs Whokaryote, writing
+`whokaryote.noneuk.txt`, plus any analyses selected with `--rrna` or `--trna`.
+The database is still required for rRNA classification, but runs
+without `--rrna` do not require one:
 
 ```console
 petra run \
@@ -166,8 +167,7 @@ output directory's `decontaminated/` subdirectory:
 - `decontaminated/predictions.archaea.fasta`
 - `decontaminated/predictions.unassigned.fasta`
 
-A full run also writes `whokaryote.noneuk.txt`, with one Whokaryote-classified
-non-eukaryotic contig identifier per line, and `predictions.organelles.tsv`,
+A full run also writes `predictions.organelles.tsv`,
 listing each sequence that Tiara classified as an organelle and its second-stage
 type (`mitochondrion`, `plastid`, or `unknown`). Only sequences of at least
 5,000 bp are considered for either output.

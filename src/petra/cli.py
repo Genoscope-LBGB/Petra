@@ -59,21 +59,19 @@ SummaryTheme = Enum(
 def _require_executables(
     *, rrna: bool, trna: bool, skip_taxonomic_assignment: bool
 ) -> None:
-    required = (
-        []
-        if skip_taxonomic_assignment
-        else [
-            "diamond",
-            "pyrodigal",
-            "taxonkit",
-            "cd-hit",
-            "minimap2",
-            "samtools",
-            "segmasker",
-            "whokaryote.py",
-            "bedtools",
-        ]
-    )
+    required = ["pyrodigal", "whokaryote.py"]
+    if not skip_taxonomic_assignment:
+        required.extend(
+            (
+                "diamond",
+                "taxonkit",
+                "cd-hit",
+                "minimap2",
+                "samtools",
+                "segmasker",
+                "bedtools",
+            )
+        )
     if rrna:
         required.extend(("cmscan", "blastn"))
         if skip_taxonomic_assignment:
@@ -356,8 +354,8 @@ def run(
         typer.Option(
             "--skip-taxonomic-assignment",
             help=(
-                "Run only the enabled rRNA and tRNA analyses, without the "
-                "protein-based taxonomic assignment."
+                "Skip the protein-based taxonomic assignment and run only "
+                "Whokaryote plus the enabled rRNA and tRNA analyses."
             ),
             rich_help_panel="Execution",
         ),
@@ -436,11 +434,6 @@ def run(
     ] = "slurm",
 ) -> None:
     """Run the workflow unless Snakemake targets are passed after '--'."""
-    if skip_taxonomic_assignment and not (rrna or trna):
-        raise typer.BadParameter(
-            "--skip-taxonomic-assignment requires --rrna, --trna, or both.",
-            param_hint="--skip-taxonomic-assignment",
-        )
     if host_taxon is not None and not rrna:
         raise typer.BadParameter(
             "--host-taxon requires --rrna.",
