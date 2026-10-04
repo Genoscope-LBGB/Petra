@@ -88,9 +88,24 @@ class WorkflowDagTest(unittest.TestCase):
         self._assert_job_absent(rna_only, "extract_organelles")
         self._assert_job_absent(rna_only, "plot_summary_graph")
         self.assertNotIn("predictions.gene_taxonomy.tsv", rna_only)
+        self.assertNotIn("predictions.organelles.tsv", rna_only)
+        self._assert_job_count(rna_only, "whokaryote", 1)
+        self._assert_job_absent(rna_only, "control_taxonomy_with_whokaryote")
         self._assert_job_count(rna_only, "cmscan", 16)
         self._assert_job_count(rna_only, "summarize_rrna_hits", 1)
         self._assert_job_count(rna_only, "trnascan", 1)
+
+        whokaryote_only = self._dry_run(
+            rrna=False,
+            trna=False,
+            skip_taxonomic_assignment=True,
+        )
+        self._assert_job_count(whokaryote_only, "pyrodigal", 1)
+        self._assert_job_count(whokaryote_only, "whokaryote", 1)
+        self._assert_job_absent(whokaryote_only, "diamond")
+        self._assert_job_absent(whokaryote_only, "cmscan")
+        self._assert_job_absent(whokaryote_only, "trnascan")
+        self.assertIn("whokaryote.noneuk.txt", whokaryote_only)
 
     def _dry_run(
         self,

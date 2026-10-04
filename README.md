@@ -37,14 +37,17 @@ to `petra.dmnd` in the same output directory:
 - `petra.ssu.fasta`, a BLAST database of SILVA SSURef NR99 and PR2, carrying
   NCBI taxon identifiers.
 - `petra.lsu.fasta`, a BLAST database of SILVA LSURef NR99 and EUKARYOME,
-  carrying the lineage in each sequence header.
+  carrying NCBI taxon identifiers.
 
 This part requires `makeblastdb`, `cmpress` and `taxonkit` on `PATH`. PETRA
 passes the bundled `database/taxonomy/` directory to TaxonKit while constructing
 the RNA databases. SILVA sequences of unidentified organisms are discarded, and
 PR2 sequences already present in SILVA are dropped so the SSU database holds
-each accession once. Other sources are downloaded into the output directory and
-removed after the build.
+each accession once. PR2 and EUKARYOME sequences take the NCBI taxon of the
+deepest name in their lineage that TaxonKit recognizes. EUKARYOME
+`unclassified` fillers are skipped, and its species epithets are looked up
+as binomials under their genus. Other sources are downloaded into the output
+directory and removed after the build.
 
 Because the DIAMOND build takes several hours, the two halves can be run
 separately. `--skip-diamond-db` leaves an existing `petra.dmnd` untouched:
@@ -103,10 +106,12 @@ Sequences with taxonomic evidence below this minimum have all ranks set to
 `N/A` and `unassigned_reason` set to `insufficient_support`. Their gene-level
 evidence remains in `predictions.gene_taxonomy.tsv`.
 
-Sequences passing the gate use the ordinary observed `--alpha` majority
-(default `0.5`), with all aligned unigenes in the denominator. If no rank
-reaches a unique alpha majority despite taxonomic evidence, the reason is
-`no_consensus`.
+Sequences passing the gate assign a taxon only when it holds more than the
+`--alpha` share (default `0.5`, a strict majority) of all aligned unigenes.
+Ranks are resolved top-down: at each rank, only unigenes that agree with the
+consensus at every higher rank vote. Ranks that the winning clade lacks (for
+example, the kingdom of Ciliophora) do not stop the descent. If no rank
+exceeds `--alpha` despite taxonomic evidence, the reason is `no_consensus`.
 
 #### Optional rRNA and tRNA analyses
 
@@ -135,10 +140,11 @@ Add `--trna` to annotate tRNAs. It requires `tRNAscan-SE` on `PATH` and writes
 `rna/predictions.trna.tsv` without pseudogenes, undetermined tRNAs or suppressor
 tRNAs, plus `rna/predictions.trna.stats`.
 
-Use `--skip-taxonomic-assignment` with `--rrna`, `--trna`, or both to run only
-the selected RNA analyses. Long reads are not required in this mode. The
-database is still required for rRNA classification, but a tRNA-only run does
-not require one:
+Use `--skip-taxonomic-assignment` to skip the protein-based taxonomic
+assignment. In this mode PETRA runs Whokaryote, writing
+`whokaryote.noneuk.txt`, plus any analyses selected with `--rrna` or `--trna`.
+The database is still required for rRNA classification, but runs
+without `--rrna` do not require one:
 
 ```console
 petra run \
@@ -161,8 +167,7 @@ output directory's `decontaminated/` subdirectory:
 - `decontaminated/predictions.archaea.fasta`
 - `decontaminated/predictions.unassigned.fasta`
 
-A full run also writes `whokaryote.noneuk.txt`, with one Whokaryote-classified
-non-eukaryotic contig identifier per line, and `predictions.organelles.tsv`,
+A full run also writes `predictions.organelles.tsv`,
 listing each sequence that Tiara classified as an organelle and its second-stage
 type (`mitochondrion`, `plastid`, or `unknown`). Only sequences of at least
 5,000 bp are considered for either output.
@@ -188,11 +193,28 @@ GC against depth of coverage with point area scaled by sequence length, both
 cumulative-length marginals, the five longest sequences, and the share of
 sequences and bases that received an assignment.
 
+The taxonomy legend lists each taxon with its cumulative length and sequence
+count (`Rhodophyta  53.5 Mbp · 55`), from the largest to the smallest, with
+`other` and unassigned sequences last. When the list does not fit in one
+column it is split in two, read row by row, so the first row holds the two
+largest taxa.
+
 Customize it with `--summary-font-size`, `--summary-disable-panel` (repeat to
 drop `header`, `gc-histogram`, `coverage-histogram`, `taxonomy-legend`,
-`longest-sequences`, `length-legend` or `assignment-status`) and
-`--summary-colors`. Sequences are colored by superkingdom unless
-`--summary-colors` supplies a two-column TSV of taxonomic rank and color:
+`longest-sequences`, `length-legend` or `assignment-status`), and either
+`--summary-theme` or `--summary-colors`.
+
+A theme is a color file packaged with PETRA in `src/petra/themes/`:
+
+- `superkingdom` (default): one color per superkingdom.
+- `atlasea`: one color per eukaryotic phylum commonly met in ATLASea samples,
+  plus the Dinophyceae and Phaeophyceae classes, which have no phylum in the NCBI
+  taxonomy, so eukaryotic contaminants stand out from the host. Every
+  superkingdom keeps its default color: other eukaryotes, including those
+  without an assigned phylum, stay red.
+
+`--summary-colors` replaces the theme with your own two-column TSV of taxonomic
+rank and color, in the same format as the theme files:
 
 ```text
 Actinopteri	#1F78B4
@@ -201,12 +223,19 @@ Bacteria	green
 
 A sequence then takes the color of the deepest assigned rank listed in the
 file, assigned sequences matching no rank are drawn as `other`, and unassigned
-sequences keep the unassigned color. The same graph can be rendered from an
-existing table without rerunning the workflow:
+sequences keep the unassigned color.
+
+### Redrawing the summary graph
+
+`petra-plot` renders the same graph from an existing table without rerunning
+the workflow, for instance after filtering it with `petra-filter`:
 
 ```console
-python plot_summary_graph.py -i run-1/predictions.final.tsv -o summary.png
+petra-plot -i run-1/predictions.final.tsv -o summary.png --theme atlasea
 ```
+
+It takes a theme with `--theme` or your own color file with `--colors`, and
+`--disable-panel`, `--font-size`, `--title`, `--width`, `--height` and `--dpi`.
 
 ### Comparing runs
 
@@ -220,10 +249,19 @@ petra-compare \
   --directory run-1 --name "Chelon auratus" \
   --directory run-2 --name "Pachymatisma johnstonia" \
   --directory run-3 --name "Jania squamata" \
-  --colors taxon_colors.tsv \
+  --theme atlasea \
   --font-size 12 \
   --output comparison.png
 ```
+
+Every panel shares one color file: a theme with `--theme` (`superkingdom` by
+default) or your own TSV with `--colors`.
+
+To keep the legend short, a taxon keeps its own color only if it holds more
+than 5% of the bases of at least one assembly. Smaller taxa take their
+superkingdom color instead, which is the one the theme uses for that
+superkingdom when it lists it. Change the threshold with `--min-share`, or
+set it to `0` to color every taxon.
 
 ### Filtering the prediction table
 

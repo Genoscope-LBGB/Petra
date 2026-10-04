@@ -7,14 +7,13 @@ include: "rules/coverage.smk"
 include: "rules/qc.smk"
 
 
-_ALL_TARGETS = []
+_ALL_TARGETS = ["whokaryote.noneuk.txt"]
 if not config["skip_taxonomic_assignment"]:
     _ALL_TARGETS.extend(
         [
             "predictions.final.tsv",
             "predictions.gene_taxonomy.tsv",
             "predictions.organelles.tsv",
-            "whokaryote.noneuk.txt",
             "predictions.summary.png",
             "decontaminated/predictions.eukaryota.fasta",
             "decontaminated/predictions.bacteria.fasta",

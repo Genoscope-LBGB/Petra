@@ -1,0 +1,5 @@
+# Default PETRA theme: one color per superkingdom.
+Bacteria	#00FF00
+Archaea	#0000FF
+Viruses	#000000
+Eukaryota	#FF0000

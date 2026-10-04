@@ -11,6 +11,7 @@ sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 from assign_taxonomy import TAXONOMIC_RANKS  # noqa: E402
 from plot_summary_comparison import (  # noqa: E402
     _UNASSIGNED_LABEL,
+    _keep_major_taxa,
     _legend_handles,
     _load_run,
     _panel_letter,
@@ -18,7 +19,9 @@ from plot_summary_comparison import (  # noqa: E402
     main,
     plot_summary_comparison,
 )
-from plot_summary_graph import _palette  # noqa: E402
+from plot_summary_graph import _palette, _read_color_map, theme_colors  # noqa: E402
+
+_SUPERKINGDOM = _read_color_map(theme_colors("superkingdom"))
 
 _COLUMNS = (
     "sequence_name",
@@ -105,22 +108,26 @@ class TaxonomyFileTest(unittest.TestCase):
 
 
 class SharedPaletteTest(unittest.TestCase):
-    def test_gives_one_color_per_taxon_across_every_run(self) -> None:
+    def test_orders_taxa_by_total_length_across_every_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             runs = [
-                _load_run("Fish", _run_directory(directory, "fish", _FISH), None),
-                _load_run("Sponge", _run_directory(directory, "sponge", _SPONGE), None),
+                _load_run("Fish", _run_directory(directory, "fish", _FISH), _SUPERKINGDOM),
+                _load_run(
+                    "Sponge", _run_directory(directory, "sponge", _SPONGE), _SUPERKINGDOM
+                ),
             ]
             ordered, palette = _palette(
-                [group for run in runs for group in run.groups], None
+                [group for run in runs for group in run.groups],
+                [sequence.length for run in runs for sequence in run.sequences],
+                _SUPERKINGDOM,
             )
 
-            self.assertEqual(ordered, ["Bacteria", "Archaea", "Eukaryota", "N/A"])
+            self.assertEqual(ordered, ["Eukaryota", "Bacteria", "Archaea", "N/A"])
             self.assertEqual(len(set(palette.values())), len(ordered))
 
     def test_labels_unassigned_sequences_in_the_legend(self) -> None:
-        ordered, palette = _palette(["Bacteria", "N/A"], None)
+        ordered, palette = _palette(["Bacteria", "N/A"], [10, 10], _SUPERKINGDOM)
         labels = [handle.get_label() for handle in _legend_handles(ordered, palette)]
 
         self.assertEqual(labels, ["Bacteria", _UNASSIGNED_LABEL])
@@ -136,14 +143,49 @@ class LoadRunTest(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(ValueError, "coverage above 0"):
-                _load_run("Flat", directory, None)
+                _load_run("Flat", directory, _SUPERKINGDOM)
 
     def test_rejects_an_empty_table(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = _run_directory(Path(temporary_directory), "empty", ())
 
             with self.assertRaisesRegex(ValueError, "any assembly sequence"):
-                _load_run("Empty", directory, None)
+                _load_run("Empty", directory, _SUPERKINGDOM)
+
+
+class KeepMajorTaxaTest(unittest.TestCase):
+    def test_recolors_taxa_minor_in_every_run_by_superkingdom(self) -> None:
+        color_map = {
+            taxon: "#111111"
+            for taxon in ("Chordata", "Rotifera", "Arthropoda", "Mollusca", "Pseudomonadota")
+        }
+        eukaryote = {"domain": "Eukaryota"}
+        fish = (
+            _row("chordata", 880_000, 42.0, 40, {**eukaryote, "phylum": "Chordata"}),
+            _row("rotifera", 60_000, 42.0, 40, {**eukaryote, "phylum": "Rotifera"}),
+            _row("arthropoda", 40_000, 42.0, 40, {**eukaryote, "phylum": "Arthropoda"}),
+            _row(
+                "bacterium", 10_000, 60.0, 5, {"domain": "Bacteria", "phylum": "Pseudomonadota"}
+            ),
+            _row("unassigned", 10_000, 42.0, 5, {}, "no_consensus"),
+        )
+        sponge = (
+            _row("mollusca", 99_000, 40.0, 30, {**eukaryote, "phylum": "Mollusca"}),
+            _row("rotifera", 1_000, 40.0, 30, {**eukaryote, "phylum": "Rotifera"}),
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            runs = [
+                _load_run("Fish", _run_directory(directory, "fish", fish), color_map),
+                _load_run("Sponge", _run_directory(directory, "sponge", sponge), color_map),
+            ]
+            fish_run, sponge_run = _keep_major_taxa(runs, 5.0, _SUPERKINGDOM)
+
+        self.assertEqual(
+            fish_run.groups, ("Chordata", "Rotifera", "Eukaryota", "Bacteria", "N/A")
+        )
+        # Rotifera clears the share in the fish only, yet keeps its color here.
+        self.assertEqual(sponge_run.groups, ("Mollusca", "Rotifera"))
 
 
 class PlotSummaryComparisonTest(unittest.TestCase):
