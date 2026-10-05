@@ -30,9 +30,7 @@ set-resources:
   median_coverage:
     mem_mb: 20000
   pyrodigal:
-    runtime: 840
     mem_mb: 128000
-    qos: quickngs
   segmasker:
     runtime: 840
     mem_mb: 10000
