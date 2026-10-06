@@ -166,6 +166,8 @@ output directory's `decontaminated/` subdirectory:
 - `decontaminated/predictions.viruses.fasta`
 - `decontaminated/predictions.archaea.fasta`
 - `decontaminated/predictions.unassigned.fasta`
+- `decontaminated/predictions.final.fasta`: the Eukaryota and unassigned
+  (`N/A` domain) sequences together, in assembly order
 
 A full run also writes `predictions.organelles.tsv`,
 listing each sequence that Tiara classified as an organelle and its second-stage
