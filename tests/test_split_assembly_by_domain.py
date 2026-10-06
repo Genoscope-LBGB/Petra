@@ -53,6 +53,10 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
             )
             self.assertEqual(outputs["archaea"].read_bytes(), b">archaeon\r\nTA\r\n")
             self.assertEqual(outputs["unassigned"].read_bytes(), b">unassigned\r\nNN")
+            self.assertEqual(
+                outputs["final"].read_bytes(),
+                b">eukaryote description\r\naa\r\n>unassigned\r\nNN",
+            )
 
     def test_creates_empty_files_for_unrepresented_domains(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -66,7 +70,13 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
             split_assembly_by_domain(assembly, taxonomy, **outputs)
 
             self.assertEqual(outputs["bacteria"].read_text(), ">bacterium\nAC\n")
-            for output_name in ("eukaryota", "viruses", "archaea", "unassigned"):
+            for output_name in (
+                "eukaryota",
+                "viruses",
+                "archaea",
+                "unassigned",
+                "final",
+            ):
                 self.assertEqual(outputs[output_name].read_bytes(), b"")
 
     def test_rejects_assembly_sequence_absent_from_taxonomy(self) -> None:
@@ -104,6 +114,7 @@ class SplitAssemblyByDomainTest(unittest.TestCase):
                 "viruses",
                 "archaea",
                 "unassigned",
+                "final",
             )
         }
 

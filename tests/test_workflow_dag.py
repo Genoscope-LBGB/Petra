@@ -50,15 +50,16 @@ class WorkflowDagTest(unittest.TestCase):
         self.assertIn("predictions.organelles.tsv", protein_only)
         self.assertIn("predictions.gene_taxonomy.tsv", protein_only)
         self.assertIn("whokaryote.noneuk.txt", protein_only)
-        for domain in (
+        for output_name in (
             "eukaryota",
             "bacteria",
             "viruses",
             "archaea",
             "unassigned",
+            "final",
         ):
             self.assertIn(
-                f"decontaminated/predictions.{domain}.fasta",
+                f"decontaminated/predictions.{output_name}.fasta",
                 protein_only,
             )
 
