@@ -20,6 +20,7 @@ if not config["skip_taxonomic_assignment"]:
             "decontaminated/predictions.viruses.fasta",
             "decontaminated/predictions.archaea.fasta",
             "decontaminated/predictions.unassigned.fasta",
+            "decontaminated/predictions.final.fasta",
         ]
     )
 if config["rrna"]:

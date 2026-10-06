@@ -23,6 +23,7 @@ _OUTPUT_BY_DOMAIN = {
     "Archaea": "archaea",
     "N/A": "unassigned",
 }
+_FINAL_SOURCE_OUTPUTS = frozenset({"eukaryota", "unassigned"})
 
 
 def _domain_assignments(source: Path) -> dict[str, str]:
@@ -76,6 +77,7 @@ def split_assembly_by_domain(
     viruses: Path,
     archaea: Path,
     unassigned: Path,
+    final: Path,
 ) -> None:
     assignments = _domain_assignments(taxonomy)
     destinations = {
@@ -84,6 +86,7 @@ def split_assembly_by_domain(
         "viruses": viruses,
         "archaea": archaea,
         "unassigned": unassigned,
+        "final": final,
     }
     assembly_ids: set[str] = set()
     counts: Counter[str] = Counter()
@@ -91,7 +94,7 @@ def split_assembly_by_domain(
     with ExitStack() as stack:
         output_handles = _open_outputs(stack, destinations)
         input_handle = stack.enter_context(assembly.open(encoding="utf-8", newline=""))
-        output_handle: TextIO | None = None
+        record_handles: tuple[TextIO, ...] = ()
         for line_number, line in enumerate(input_handle, start=1):
             if line.startswith(">"):
                 sequence_id = line[1:].split(maxsplit=1)[0]
@@ -113,11 +116,18 @@ def split_assembly_by_domain(
                         f"final taxonomy table {taxonomy}."
                     ) from error
                 assembly_ids.add(sequence_id)
-                counts[output_name] += 1
-                output_handle = output_handles[output_name]
-                output_handle.write(line)
-            elif output_handle is not None:
-                output_handle.write(line)
+                record_outputs = (
+                    (output_name, "final")
+                    if output_name in _FINAL_SOURCE_OUTPUTS
+                    else (output_name,)
+                )
+                counts.update(record_outputs)
+                record_handles = tuple(output_handles[name] for name in record_outputs)
+                for output_handle in record_handles:
+                    output_handle.write(line)
+            elif record_handles:
+                for output_handle in record_handles:
+                    output_handle.write(line)
             elif line.strip():
                 raise ValueError(
                     f"Invalid assembly FASTA at line {line_number} in {assembly}: "
@@ -155,6 +165,7 @@ if "snakemake" in globals():
                     Path(workflow.output.viruses),
                     Path(workflow.output.archaea),
                     Path(workflow.output.unassigned),
+                    Path(workflow.output.final),
                 )
             except Exception:
                 traceback.print_exc()

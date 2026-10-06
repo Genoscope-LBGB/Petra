@@ -74,7 +74,10 @@ rule aggregate_taxonomy:
 
 
 rule split_assembly_by_domain:
-    """Split assembly sequences into FASTA files by final PETRA domain."""
+    """Split assembly sequences into FASTA files by final PETRA domain.
+
+    The final FASTA keeps the Eukaryota and unassigned sequences.
+    """
     input:
         assembly=config["assembly"],
         taxonomy="predictions.final.tsv",
@@ -84,6 +87,7 @@ rule split_assembly_by_domain:
         viruses="decontaminated/predictions.viruses.fasta",
         archaea="decontaminated/predictions.archaea.fasta",
         unassigned="decontaminated/predictions.unassigned.fasta",
+        final="decontaminated/predictions.final.fasta",
     log:
         "logs/split_assembly_by_domain.log",
     benchmark:
