@@ -32,7 +32,7 @@ set-resources:
     mem_mb: 20000
     qos: long
   pyrodigal:
-    mem_mb: 128000
+    mem_mb: 256000
     qos: long
   segmasker:
     runtime: 1440
