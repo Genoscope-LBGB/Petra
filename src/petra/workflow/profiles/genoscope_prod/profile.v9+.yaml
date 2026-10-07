@@ -1,6 +1,7 @@
 executor: slurm
 jobs: 100
 cores: 4000
+latency-wait: 70
 
 default-resources:
   mem_mb_per_cpu: 10000
