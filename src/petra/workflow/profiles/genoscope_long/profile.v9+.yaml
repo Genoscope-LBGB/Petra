@@ -106,4 +106,3 @@ set-resources:
   plot_summary_graph:
     runtime: 240
     mem_mb: 20000
-    qos: quickngs
