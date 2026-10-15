@@ -10,7 +10,9 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from email.message import Message
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from petra import database
@@ -238,6 +240,89 @@ class InstallTaxonomyDatabaseTest(unittest.TestCase):
             )
 
         self.assertIn("nodes.dmp", str(raised.exception))
+
+
+class _Response(io.BytesIO):
+    """An HTTP response that drops the connection after ``reset_after`` bytes."""
+
+    def __init__(self, payload: bytes, status: int, reset_after: int | None) -> None:
+        super().__init__(payload)
+        self.status = status
+        self.reset_after = reset_after
+
+    def read(self, size: int | None = -1) -> bytes:
+        if self.reset_after is None:
+            return super().read(size)
+        left = self.reset_after - self.tell()
+        if left <= 0:
+            raise ConnectionResetError(104, "Connection reset by peer")
+        if size is None or size < 0 or size > left:
+            size = left
+        return super().read(size)
+
+
+class DownloadTest(unittest.TestCase):
+    url = "https://example.org/proteins.faa.gz"
+    payload = b"0123456789" * 1000
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.destination = Path(self.temporary.name) / "proteins.faa.gz"
+        self.ranges: list[str | None] = []
+        sleep = patch.object(database.time, "sleep")
+        sleep.start()
+        self.addCleanup(sleep.stop)
+
+    def _serve(self, *outcomes: BaseException | int | None):
+        """Answer each request with the next outcome: an exception to raise, a
+        byte count after which the connection resets, or None to finish."""
+        remaining = list(outcomes)
+
+        def urlopen(request, timeout):
+            requested = request.get_header("Range")
+            self.ranges.append(requested)
+            outcome = remaining.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            offset = (
+                int(requested.removeprefix("bytes=").rstrip("-")) if requested else 0
+            )
+            status = 206 if requested else 200
+            return _Response(self.payload[offset:], status, outcome)
+
+        return patch.object(database, "urlopen", urlopen)
+
+    def test_retries_a_connection_reset_before_any_data(self) -> None:
+        reset = URLError(ConnectionResetError(104, "Connection reset by peer"))
+        with self._serve(reset, None):
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertEqual(self.destination.read_bytes(), self.payload)
+
+    def test_resumes_from_the_bytes_already_downloaded(self) -> None:
+        with self._serve(3000, None):
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertEqual(self.destination.read_bytes(), self.payload)
+        self.assertEqual(self.ranges, [None, "bytes=3000-"])
+
+    def test_does_not_retry_a_missing_file(self) -> None:
+        missing = HTTPError(self.url, 404, "Not Found", Message(), None)
+        with self._serve(missing), self.assertRaises(DatabaseBuildError) as raised:
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertIn("after 1 attempt(s)", str(raised.exception))
+        self.assertFalse(self.destination.exists())
+
+    def test_gives_up_and_removes_the_partial_file(self) -> None:
+        attempts = [100] * database._DOWNLOAD_ATTEMPTS
+        with self._serve(*attempts), self.assertRaises(DatabaseBuildError) as raised:
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertIn("Connection reset by peer", str(raised.exception))
+        self.assertEqual(len(self.ranges), database._DOWNLOAD_ATTEMPTS)
+        self.assertFalse(self.destination.exists())
 
 
 # Captures what makedb read, since the build removes its inputs afterwards.
