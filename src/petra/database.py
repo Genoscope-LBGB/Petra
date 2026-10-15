@@ -9,8 +9,10 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -44,6 +46,14 @@ PR2_SSU_URL = (
 EUKARYOME_LSU_URL = (
     "https://sisu.ut.ee/wp-content/uploads/sites/643/General_EUK_LSU_v2.0.zip"
 )
+MARFERRET_VERSION = "v1.1.1"
+_MARFERRET_RECORD = "https://zenodo.org/records/10553848/files"
+MARFERRET_FASTA_URL = (
+    f"{_MARFERRET_RECORD}/MarFERReT.{MARFERRET_VERSION}.proteins.faa.gz"
+)
+MARFERRET_TAXON_MAP_URL = (
+    f"{_MARFERRET_RECORD}/MarFERReT.{MARFERRET_VERSION}.taxonomies.tab.gz"
+)
 
 # 5S, 5.8S, and the per-domain SSU and LSU Rfam families, as used by cmscan.
 RRNA_CM_ACCESSIONS = (
@@ -69,6 +79,10 @@ TAXONOMY_DIRECTORY_NAME = "taxonomy"
 TAXONOMY_FILENAMES = ("names.dmp", "nodes.dmp", "delnodes.dmp", "merged.dmp")
 _NR_FILENAME = "nr.gz"
 _TAXON_MAP_FILENAME = "prot.accession2taxid.FULL.gz"
+_MARFERRET_FASTA_FILENAME = f"MarFERReT.{MARFERRET_VERSION}.proteins.faa.gz"
+_MARFERRET_TAXON_MAP_FILENAME = f"MarFERReT.{MARFERRET_VERSION}.taxonomies.tab.gz"
+_COMBINED_TAXON_MAP_FILENAME = "petra.accession2taxid"
+_GZIP_MAGIC = b"\x1f\x8b"
 _TAXDUMP_ARCHIVE_FILENAME = "taxdump.tar.gz"
 _RNA_SOURCE_DIRNAME = "rna_sources"
 _CM_INDEX_SUFFIXES = (".i1f", ".i1i", ".i1m", ".i1p")
@@ -163,9 +177,14 @@ def build_diamond_database(
     fasta: Path | None,
     taxon_map: Path | None,
     output: Path,
+    marferret: bool = False,
     diamond_executable: str = "diamond",
 ) -> Path:
-    """Build ``petra.dmnd``, downloading and removing missing inputs as needed."""
+    """Build ``petra.dmnd``, downloading and removing missing inputs as needed.
+
+    With ``marferret``, the MarFERReT proteins and taxon map are appended to the
+    main inputs.
+    """
     diamond = _require_diamond(diamond_executable)
     fasta_path = _resolve_input(fasta, "FASTA") if fasta is not None else None
     taxon_map_path = (
@@ -185,6 +204,20 @@ def build_diamond_database(
     if taxon_map_path is None:
         taxon_map_path = output_directory / _TAXON_MAP_FILENAME
         _reject_existing_download(taxon_map_path)
+    marferret_fasta = output_directory / _MARFERRET_FASTA_FILENAME
+    marferret_taxon_map = output_directory / _MARFERRET_TAXON_MAP_FILENAME
+    # A user-supplied map must stay untouched, so MarFERReT goes into a copy;
+    # the downloaded NCBI map is ours to extend in place.
+    combined_taxon_map = (
+        output_directory / _COMBINED_TAXON_MAP_FILENAME
+        if marferret and taxon_map is not None
+        else None
+    )
+    if marferret:
+        _reject_existing_download(marferret_fasta)
+        _reject_existing_download(marferret_taxon_map)
+    if combined_taxon_map is not None:
+        _reject_existing_download(combined_taxon_map)
 
     try:
         if fasta is None:
@@ -193,25 +226,53 @@ def build_diamond_database(
         if taxon_map is None:
             _download(TAXON_MAP_URL, taxon_map_path, "NCBI protein taxon map")
             downloads.append(taxon_map_path)
+        if marferret:
+            logger.info(
+                "Adding MarFERReT %s to the DIAMOND database", MARFERRET_VERSION
+            )
+            _download(MARFERRET_FASTA_URL, marferret_fasta, "MarFERReT FASTA")
+            downloads.append(marferret_fasta)
+            _download(
+                MARFERRET_TAXON_MAP_URL, marferret_taxon_map, "MarFERReT taxon map"
+            )
+            downloads.append(marferret_taxon_map)
+            if combined_taxon_map is not None:
+                downloads.append(combined_taxon_map)
+                _copy_file(taxon_map_path, combined_taxon_map)
+                taxon_map_path = combined_taxon_map
+            _append_gzip_content(
+                marferret_taxon_map,
+                taxon_map_path,
+                compressed=_is_gzip(taxon_map_path),
+                skip_header=True,
+            )
 
-        arguments = [
-            diamond,
-            "makedb",
-            "--in",
-            str(fasta_path),
+        arguments = [diamond, "makedb"]
+        if not marferret:
+            arguments += ["--in", str(fasta_path)]
+        arguments += [
             "--db",
             str(database_base),
             "--taxonmap",
             str(taxon_map_path),
         ]
         logger.info("Building DIAMOND database at %s", database_path)
-        try:
-            process = subprocess.run(arguments, cwd=output_directory, check=False)
-        except OSError as error:
-            raise DatabaseBuildError(f"Could not run DIAMOND: {error}") from error
-        if process.returncode != 0:
+        if marferret:
+            returncode = _run_makedb_on_stdin(
+                arguments,
+                cwd=output_directory,
+                fasta=fasta_path,
+                extra_fasta=marferret_fasta,
+            )
+        else:
+            try:
+                process = subprocess.run(arguments, cwd=output_directory, check=False)
+            except OSError as error:
+                raise DatabaseBuildError(f"Could not run DIAMOND: {error}") from error
+            returncode = process.returncode
+        if returncode != 0:
             raise DatabaseBuildError(
-                f"DIAMOND database build failed with exit code {process.returncode}."
+                f"DIAMOND database build failed with exit code {returncode}."
             )
         if not database_path.is_file():
             raise DatabaseBuildError(
@@ -225,6 +286,89 @@ def build_diamond_database(
     _remove_downloads(downloads, strict=True)
     logger.info("DIAMOND database ready: %s", database_path)
     return database_path
+
+
+def _run_makedb_on_stdin(
+    arguments: list[str], *, cwd: Path, fasta: Path, extra_fasta: Path
+) -> int:
+    """Stream ``fasta`` then the gzipped ``extra_fasta`` into ``diamond makedb``.
+
+    DIAMOND takes a single ``--in`` file, and concatenating NR on disk would
+    duplicate a 200 GB file. Gzip members may follow each other, so a gzipped
+    FASTA is followed by the raw MarFERReT bytes; a plain one by its text.
+    """
+    try:
+        process = subprocess.Popen(arguments, cwd=cwd, stdin=subprocess.PIPE)
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not run DIAMOND: {error}") from error
+    assert process.stdin is not None
+    try:
+        with process.stdin as stream:
+            with fasta.open("rb") as source:
+                shutil.copyfileobj(source, stream)
+            _append_gzip_content(
+                extra_fasta,
+                stream,
+                compressed=_is_gzip(fasta),
+                skip_header=False,
+            )
+    except BrokenPipeError:
+        # DIAMOND exited early; its exit code explains why.
+        pass
+    except BaseException:
+        process.kill()
+        process.wait()
+        raise
+    return process.wait()
+
+
+def _is_gzip(path: Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            return stream.read(len(_GZIP_MAGIC)) == _GZIP_MAGIC
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not read {path}: {error}") from error
+
+
+def _copy_file(source: Path, destination: Path) -> None:
+    try:
+        with source.open("rb") as reader, destination.open("xb") as writer:
+            shutil.copyfileobj(reader, writer)
+    except OSError as error:
+        raise DatabaseBuildError(
+            f"Could not copy {source} to {destination}: {error}"
+        ) from error
+
+
+def _append_gzip_content(
+    source: Path,
+    destination: Path | BinaryIO,
+    *,
+    compressed: bool,
+    skip_header: bool,
+) -> None:
+    """Append the gzipped ``source`` to ``destination``, matching its encoding."""
+    try:
+        with ExitStack() as stack:
+            writer = (
+                stack.enter_context(destination.open("ab"))
+                if isinstance(destination, Path)
+                else destination
+            )
+            if compressed and not skip_header:
+                with source.open("rb") as reader:
+                    shutil.copyfileobj(reader, writer)
+                return
+            reader = stack.enter_context(gzip.open(source, "rb"))
+            if skip_header:
+                reader.readline()
+            if compressed:
+                writer = stack.enter_context(gzip.GzipFile(fileobj=writer, mode="wb"))
+            shutil.copyfileobj(reader, writer)
+    except BrokenPipeError:
+        raise
+    except (OSError, EOFError) as error:
+        raise DatabaseBuildError(f"Could not append {source.name}: {error}") from error
 
 
 def _require_diamond(executable: str) -> str:

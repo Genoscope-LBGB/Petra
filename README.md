@@ -27,6 +27,13 @@ NCBI NR or the full NCBI protein taxon map. Downloaded archives and DIAMOND
 inputs are removed after the build; the extracted taxonomy is retained. The
 command fails rather than replacing an existing download or `petra.dmnd`.
 
+Add `--with-marferret` to include the marine eukaryote proteins of
+[MarFERReT](https://github.com/armbrustlab/marferret) v1.1.1 in `petra.dmnd`,
+alongside NR or `--fasta`. If you use it, cite Groussman RD, Blaskowski S,
+Coesel SN, Armbrust EV. MarFERReT, an open-source, version-controlled reference
+library of marine microbial eukaryote functional genes. *Sci Data* 10, 926
+(2023). https://doi.org/10.1038/s41597-023-02842-4
+
 Add `--build-rna-dbs` to also build the databases used for rRNA detection, next
 to `petra.dmnd` in the same output directory:
 

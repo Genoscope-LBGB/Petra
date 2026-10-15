@@ -17,6 +17,7 @@ from .database import (
     COVARIANCE_MODEL_FILENAME,
     DIAMOND_DATABASE_FILENAME,
     LSU_DATABASE_FILENAME,
+    MARFERRET_VERSION,
     SSU_DATABASE_FILENAME,
     TAXONOMY_DIRECTORY_NAME,
     DatabaseBuildError,
@@ -601,6 +602,17 @@ def build_db(
             rich_help_panel="Inputs",
         ),
     ] = None,
+    with_marferret: Annotated[
+        bool,
+        typer.Option(
+            "--with-marferret",
+            help=(
+                "Add the MarFERReT marine eukaryote proteins "
+                f"({MARFERRET_VERSION}) to the DIAMOND database."
+            ),
+            rich_help_panel="Inputs",
+        ),
+    ] = False,
     taxdump: Annotated[
         Path | None,
         typer.Option(
@@ -645,10 +657,12 @@ def build_db(
             "--skip-diamond-db leaves nothing to build. Add --build-rna-dbs.",
             param_hint="--skip-diamond-db",
         )
-    if skip_diamond_db and (fasta is not None or taxon_map is not None):
+    if skip_diamond_db and (
+        fasta is not None or taxon_map is not None or with_marferret
+    ):
         raise typer.BadParameter(
-            "--fasta and --taxon-map only feed the DIAMOND database, which "
-            "--skip-diamond-db disables.",
+            "--fasta, --taxon-map and --with-marferret only feed the DIAMOND "
+            "database, which --skip-diamond-db disables.",
             param_hint="--skip-diamond-db",
         )
 
@@ -659,6 +673,7 @@ def build_db(
                 fasta=fasta,
                 taxon_map=taxon_map,
                 output=output,
+                marferret=with_marferret,
             )
         if build_rna_dbs:
             build_rna_databases(output=output, taxonomy=taxonomy)

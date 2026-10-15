@@ -683,30 +683,32 @@ class BuildDbCliTest(unittest.TestCase):
             fasta = Path(temporary_directory) / "proteins.faa"
             fasta.touch()
 
-            with (
-                patch("petra.cli.build_diamond_database") as diamond,
-                patch("petra.cli.build_rna_databases") as rna,
-            ):
-                result = CliRunner().invoke(
-                    app,
-                    [
-                        "build-db",
-                        "--output",
-                        "database",
-                        "--build-rna-dbs",
-                        "--skip-diamond-db",
-                        "--fasta",
-                        str(fasta),
-                    ],
-                )
+            for diamond_input in (["--fasta", str(fasta)], ["--with-marferret"]):
+                with (
+                    self.subTest(diamond_input=diamond_input),
+                    patch("petra.cli.build_diamond_database") as diamond,
+                    patch("petra.cli.build_rna_databases") as rna,
+                ):
+                    result = CliRunner().invoke(
+                        app,
+                        [
+                            "build-db",
+                            "--output",
+                            "database",
+                            "--build-rna-dbs",
+                            "--skip-diamond-db",
+                            *diamond_input,
+                        ],
+                    )
 
-        self.assertEqual(result.exit_code, 2)
-        self.assertIn(
-            "--fasta and --taxon-map only feed the DIAMOND database",
-            _flatten(result.output),
-        )
-        diamond.assert_not_called()
-        rna.assert_not_called()
+                    self.assertEqual(result.exit_code, 2)
+                    self.assertIn(
+                        "--fasta, --taxon-map and --with-marferret only feed the "
+                        "DIAMOND database",
+                        _flatten(result.output),
+                    )
+                    diamond.assert_not_called()
+                    rna.assert_not_called()
 
     def test_reports_a_build_failure(self) -> None:
         with (

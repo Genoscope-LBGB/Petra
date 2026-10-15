@@ -240,6 +240,121 @@ class InstallTaxonomyDatabaseTest(unittest.TestCase):
         self.assertIn("nodes.dmp", str(raised.exception))
 
 
+# Captures what makedb read, since the build removes its inputs afterwards.
+_DIAMOND_STUB = """\
+import os
+import pathlib
+import shutil
+import sys
+
+arguments = sys.argv[1:]
+if arguments[0] == "version":
+    print("diamond version 2.2.8")
+    sys.exit(0)
+options = dict(zip(arguments[1::2], arguments[2::2]))
+base = pathlib.Path(options["--db"])
+if "--in" in options:
+    shutil.copyfile(options["--in"], f"{base}.fasta")
+else:
+    pathlib.Path(f"{base}.fasta").write_bytes(sys.stdin.buffer.read())
+shutil.copyfile(options["--taxonmap"], f"{base}.taxonmap")
+exit_code = int(os.environ.get("DIAMOND_STUB_EXIT", "0"))
+if exit_code == 0:
+    pathlib.Path(f"{base}.dmnd").touch()
+sys.exit(exit_code)
+"""
+NR_FASTA = ">WP_000001.1 protein [Escherichia coli]\nMKVLA\n"
+NCBI_TAXON_MAP = (
+    "accession\taccession.version\ttaxid\tgi\nWP_000001\tWP_000001.1\t562\t1\n"
+)
+MARFERRET_FASTA = ">mft0000000001 \nMSTNP\n"
+MARFERRET_TAXON_MAP = (
+    "accession\taccession.version\ttaxid\tgi\nNA\tmft0000000001\t2593073\tNA\n"
+)
+
+
+def _maybe_gunzip(payload: bytes) -> str:
+    if payload[:2] == b"\x1f\x8b":
+        payload = gzip.decompress(payload)
+    return payload.decode("utf-8")
+
+
+class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        tools = self.directory / "tools"
+        tools.mkdir()
+        script = _write_stub(tools, "diamond")
+        script.write_text(_DIAMOND_STUB, encoding="utf-8")
+        self.output = self.directory / "database"
+        patched_path = patch.dict(
+            os.environ, {"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}"}
+        )
+        patched_path.start()
+        self.addCleanup(patched_path.stop)
+        self.payloads = {
+            database.NR_URL: _gzip_bytes(NR_FASTA),
+            database.TAXON_MAP_URL: _gzip_bytes(NCBI_TAXON_MAP),
+            database.MARFERRET_FASTA_URL: _gzip_bytes(MARFERRET_FASTA),
+            database.MARFERRET_TAXON_MAP_URL: _gzip_bytes(MARFERRET_TAXON_MAP),
+        }
+
+    def _build(self, **inputs: Path) -> Path:
+        with patch.object(database, "_download", _fake_download(self.payloads)):
+            return database.build_diamond_database(
+                fasta=inputs.get("fasta"),
+                taxon_map=inputs.get("taxon_map"),
+                output=self.output,
+                marferret=True,
+            )
+
+    def _seen_by_makedb(self) -> tuple[str, str]:
+        base = self.output / "petra"
+        return (
+            _maybe_gunzip(Path(f"{base}.fasta").read_bytes()),
+            _maybe_gunzip(Path(f"{base}.taxonmap").read_bytes()),
+        )
+
+    def test_appends_marferret_to_the_downloaded_nr_inputs(self) -> None:
+        self.assertTrue(self._build().is_file())
+
+        fasta, taxon_map = self._seen_by_makedb()
+        self.assertEqual(fasta, NR_FASTA + MARFERRET_FASTA)
+        self.assertEqual(taxon_map, NCBI_TAXON_MAP + "NA\tmft0000000001\t2593073\tNA\n")
+        leftovers = {path.name for path in self.output.iterdir()}
+        self.assertEqual(leftovers, {"petra.dmnd", "petra.fasta", "petra.taxonmap"})
+
+    def test_leaves_plain_user_inputs_untouched(self) -> None:
+        fasta = self.directory / "proteins.faa"
+        fasta.write_text(NR_FASTA, encoding="utf-8")
+        taxon_map = self.directory / "proteins.accession2taxid"
+        taxon_map.write_text(NCBI_TAXON_MAP, encoding="utf-8")
+
+        self._build(fasta=fasta, taxon_map=taxon_map)
+
+        seen_fasta, seen_taxon_map = self._seen_by_makedb()
+        self.assertEqual(seen_fasta, NR_FASTA + MARFERRET_FASTA)
+        self.assertEqual(
+            seen_taxon_map, NCBI_TAXON_MAP + "NA\tmft0000000001\t2593073\tNA\n"
+        )
+        self.assertEqual(fasta.read_text(encoding="utf-8"), NR_FASTA)
+        self.assertEqual(taxon_map.read_text(encoding="utf-8"), NCBI_TAXON_MAP)
+        self.assertFalse((self.output / "petra.accession2taxid").exists())
+
+    def test_removes_every_download_when_makedb_fails(self) -> None:
+        with (
+            patch.dict(os.environ, {"DIAMOND_STUB_EXIT": "1"}),
+            self.assertRaises(DatabaseBuildError) as raised,
+        ):
+            self._build()
+
+        self.assertIn("exit code 1", str(raised.exception))
+        leftovers = {path.name for path in self.output.iterdir()}
+        self.assertEqual(leftovers, {"petra.fasta", "petra.taxonmap"})
+
+
 class BuildRnaDatabasesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
