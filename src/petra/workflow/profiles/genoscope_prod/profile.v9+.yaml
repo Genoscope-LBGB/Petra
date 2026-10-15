@@ -30,7 +30,7 @@ set-resources:
   median_coverage:
     mem_mb: 20000
   pyrodigal:
-    mem_mb: 128000
+    mem_mb: 200000
   segmasker:
     runtime: 840
     mem_mb: 10000
@@ -59,7 +59,7 @@ set-resources:
     qos: quickngs
   whokaryote:
     runtime: 840
-    mem_mb: 32000
+    mem_mb: 100000
     qos: quickngs
   aggregate_taxonomy:
     runtime: 240
@@ -82,7 +82,7 @@ set-resources:
     mem_mb: 10000
     qos: quickngs
   cmscan:
-    mem_mb: 32000
+    mem_mb: 64000
   merge_cmscan_tblout:
     runtime: 240
     mem_mb: 10000
@@ -92,9 +92,9 @@ set-resources:
     mem_mb: 20000
     qos: quickngs
   blastn_ssu:
-    mem_mb: 32000
+    mem_mb: 120000
   blastn_lsu:
-    mem_mb: 32000
+    mem_mb: 120000
   select_rrna_best_hits:
     runtime: 240
     mem_mb: 10000
