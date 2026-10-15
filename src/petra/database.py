@@ -8,12 +8,14 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 import zipfile
 from contextlib import ExitStack
 from dataclasses import dataclass
+from http.client import HTTPException
 from pathlib import Path
 from typing import BinaryIO
-from urllib.error import URLError
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -93,6 +95,10 @@ _PR2_DOMAINS = frozenset({"Eukaryota", "Bacteria", "Archaea"})
 _RANK_PREFIX = re.compile(r"^[a-z]__")
 _EUKARYOME_PLACEHOLDER = "unclassified"
 _DOWNLOAD_TIMEOUT_SECONDS = 60
+_DOWNLOAD_ATTEMPTS = 5
+_DOWNLOAD_RETRY_DELAY_SECONDS = 30
+# Rate limiting and gateway errors are transient; other HTTP errors are not.
+_RETRYABLE_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
 logger = logging.getLogger(__name__)
 
@@ -433,26 +439,67 @@ def _path_exists(path: Path) -> bool:
 
 
 def _download(url: str, destination: Path, label: str) -> None:
+    """Download ``url``, resuming after transient network failures.
+
+    Multi-gigabyte sources (NR, MarFERReT) routinely hit connection resets, so
+    each retry continues from the bytes already on disk when the server honours
+    range requests.
+    """
     logger.info("Downloading %s from %s", label, url)
     logger.info("Saving %s to %s", label, destination)
-    request = Request(url, headers={"User-Agent": "petra"})
-    created = False
     try:
-        with destination.open("xb") as output_stream:
-            created = True
-            with urlopen(request, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response:
-                shutil.copyfileobj(response, output_stream)
+        destination.open("xb").close()
     except FileExistsError as error:
         raise DatabaseBuildError(
             f"Download destination already exists: {destination}"
         ) from error
-    except (OSError, URLError) as error:
-        if created:
-            _remove_generated_file(destination)
+    except OSError as error:
         raise DatabaseBuildError(
             f"Could not download {label} from {url}: {error}"
         ) from error
-    logger.info("Downloaded %s to %s", label, destination)
+
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            _download_attempt(url, destination)
+        except (OSError, HTTPException) as error:
+            retryable = not isinstance(error, HTTPError) or (
+                error.code in _RETRYABLE_HTTP_CODES
+            )
+            if not retryable or attempt == _DOWNLOAD_ATTEMPTS:
+                _remove_generated_file(destination)
+                raise DatabaseBuildError(
+                    f"Could not download {label} from {url} after {attempt} "
+                    f"attempt(s): {error}"
+                ) from error
+            delay = _DOWNLOAD_RETRY_DELAY_SECONDS * 2 ** (attempt - 1)
+            logger.warning(
+                "Download of %s interrupted (%s); retrying in %d s (attempt %d/%d)",
+                label,
+                error,
+                delay,
+                attempt + 1,
+                _DOWNLOAD_ATTEMPTS,
+            )
+            time.sleep(delay)
+        except BaseException:
+            _remove_generated_file(destination)
+            raise
+        else:
+            logger.info("Downloaded %s to %s", label, destination)
+            return
+
+
+def _download_attempt(url: str, destination: Path) -> None:
+    offset = destination.stat().st_size
+    headers = {"User-Agent": "petra"}
+    if offset:
+        headers["Range"] = f"bytes={offset}-"
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response:
+        # A server that ignores the range resends the whole file from byte 0.
+        resumed = offset and response.status == 206
+        with destination.open("ab" if resumed else "wb") as output_stream:
+            shutil.copyfileobj(response, output_stream)
 
 
 def _remove_downloads(paths: list[Path], *, strict: bool) -> None:
