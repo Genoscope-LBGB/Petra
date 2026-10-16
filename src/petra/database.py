@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import io
 import logging
 import re
 import shlex
@@ -246,12 +247,7 @@ def build_diamond_database(
                 downloads.append(combined_taxon_map)
                 _copy_file(taxon_map_path, combined_taxon_map)
                 taxon_map_path = combined_taxon_map
-            _append_gzip_content(
-                marferret_taxon_map,
-                taxon_map_path,
-                compressed=_is_gzip(taxon_map_path),
-                skip_header=True,
-            )
+            _append_marferret_taxon_map(marferret_taxon_map, taxon_map_path)
 
         arguments = [diamond, "makedb"]
         if not marferret:
@@ -312,12 +308,7 @@ def _run_makedb_on_stdin(
         with process.stdin as stream:
             with fasta.open("rb") as source:
                 shutil.copyfileobj(source, stream)
-            _append_gzip_content(
-                extra_fasta,
-                stream,
-                compressed=_is_gzip(fasta),
-                skip_header=False,
-            )
+            _append_gzip_content(extra_fasta, stream, compressed=_is_gzip(fasta))
     except BrokenPipeError:
         # DIAMOND exited early; its exit code explains why.
         pass
@@ -347,32 +338,57 @@ def _copy_file(source: Path, destination: Path) -> None:
 
 
 def _append_gzip_content(
-    source: Path,
-    destination: Path | BinaryIO,
-    *,
-    compressed: bool,
-    skip_header: bool,
+    source: Path, destination: BinaryIO, *, compressed: bool
 ) -> None:
     """Append the gzipped ``source`` to ``destination``, matching its encoding."""
     try:
-        with ExitStack() as stack:
-            writer = (
-                stack.enter_context(destination.open("ab"))
-                if isinstance(destination, Path)
-                else destination
-            )
-            if compressed and not skip_header:
-                with source.open("rb") as reader:
-                    shutil.copyfileobj(reader, writer)
-                return
-            reader = stack.enter_context(gzip.open(source, "rb"))
-            if skip_header:
-                reader.readline()
-            if compressed:
-                writer = stack.enter_context(gzip.GzipFile(fileobj=writer, mode="wb"))
-            shutil.copyfileobj(reader, writer)
+        if compressed:
+            with source.open("rb") as reader:
+                shutil.copyfileobj(reader, destination)
+            return
+        with gzip.open(source, "rb") as reader:
+            shutil.copyfileobj(reader, destination)
     except BrokenPipeError:
         raise
+    except (OSError, EOFError) as error:
+        raise DatabaseBuildError(f"Could not append {source.name}: {error}") from error
+
+
+def _append_marferret_taxon_map(source: Path, destination: Path) -> None:
+    """Append MarFERReT's map to ``destination`` in the destination's own columns.
+
+    DIAMOND picks the map layout from the first header line, so every appended
+    row must match it: NCBI's ``FULL`` map has two columns while MarFERReT ships
+    the four-column ``accession accession.version taxid gi`` layout.
+    """
+    compressed = _is_gzip(destination)
+    try:
+        opener = gzip.open if compressed else open
+        with opener(destination, "rt", encoding="utf-8", newline="") as reader:
+            target_columns = reader.readline().rstrip("\r\n").split("\t")
+        with ExitStack() as stack:
+            reader = stack.enter_context(
+                gzip.open(source, "rt", encoding="utf-8", newline="")
+            )
+            source_columns = reader.readline().rstrip("\r\n").split("\t")
+            try:
+                indices = [source_columns.index(column) for column in target_columns]
+            except ValueError as error:
+                raise DatabaseBuildError(
+                    f"Cannot map {source.name} columns {source_columns} onto "
+                    f"{destination.name} columns {target_columns}"
+                ) from error
+            raw = stack.enter_context(destination.open("ab"))
+            writer = stack.enter_context(
+                io.TextIOWrapper(
+                    gzip.GzipFile(fileobj=raw, mode="wb") if compressed else raw,
+                    encoding="utf-8",
+                    newline="",
+                )
+            )
+            for line in reader:
+                fields = line.rstrip("\r\n").split("\t")
+                writer.write("\t".join(fields[index] for index in indices) + "\n")
     except (OSError, EOFError) as error:
         raise DatabaseBuildError(f"Could not append {source.name}: {error}") from error
 
