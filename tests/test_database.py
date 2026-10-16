@@ -349,7 +349,8 @@ if exit_code == 0:
 sys.exit(exit_code)
 """
 NR_FASTA = ">WP_000001.1 protein [Escherichia coli]\nMKVLA\n"
-NCBI_TAXON_MAP = (
+NCBI_TAXON_MAP = "accession.version\ttaxid\nWP_000001.1\t562\n"
+LEGACY_TAXON_MAP = (
     "accession\taccession.version\ttaxid\tgi\nWP_000001\tWP_000001.1\t562\t1\n"
 )
 MARFERRET_FASTA = ">mft0000000001 \nMSTNP\n"
@@ -407,7 +408,7 @@ class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
 
         fasta, taxon_map = self._seen_by_makedb()
         self.assertEqual(fasta, NR_FASTA + MARFERRET_FASTA)
-        self.assertEqual(taxon_map, NCBI_TAXON_MAP + "NA\tmft0000000001\t2593073\tNA\n")
+        self.assertEqual(taxon_map, NCBI_TAXON_MAP + "mft0000000001\t2593073\n")
         leftovers = {path.name for path in self.output.iterdir()}
         self.assertEqual(leftovers, {"petra.dmnd", "petra.fasta", "petra.taxonmap"})
 
@@ -415,17 +416,17 @@ class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
         fasta = self.directory / "proteins.faa"
         fasta.write_text(NR_FASTA, encoding="utf-8")
         taxon_map = self.directory / "proteins.accession2taxid"
-        taxon_map.write_text(NCBI_TAXON_MAP, encoding="utf-8")
+        taxon_map.write_text(LEGACY_TAXON_MAP, encoding="utf-8")
 
         self._build(fasta=fasta, taxon_map=taxon_map)
 
         seen_fasta, seen_taxon_map = self._seen_by_makedb()
         self.assertEqual(seen_fasta, NR_FASTA + MARFERRET_FASTA)
         self.assertEqual(
-            seen_taxon_map, NCBI_TAXON_MAP + "NA\tmft0000000001\t2593073\tNA\n"
+            seen_taxon_map, LEGACY_TAXON_MAP + "NA\tmft0000000001\t2593073\tNA\n"
         )
         self.assertEqual(fasta.read_text(encoding="utf-8"), NR_FASTA)
-        self.assertEqual(taxon_map.read_text(encoding="utf-8"), NCBI_TAXON_MAP)
+        self.assertEqual(taxon_map.read_text(encoding="utf-8"), LEGACY_TAXON_MAP)
         self.assertFalse((self.output / "petra.accession2taxid").exists())
 
     def test_removes_every_download_when_makedb_fails(self) -> None:
