@@ -673,6 +673,7 @@ def build_db(
                 fasta=fasta,
                 taxon_map=taxon_map,
                 output=output,
+                taxonomy=taxonomy,
                 marferret=with_marferret,
             )
         if build_rna_dbs:

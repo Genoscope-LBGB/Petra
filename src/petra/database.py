@@ -184,15 +184,20 @@ def build_diamond_database(
     fasta: Path | None,
     taxon_map: Path | None,
     output: Path,
+    taxonomy: Path,
     marferret: bool = False,
     diamond_executable: str = "diamond",
 ) -> Path:
     """Build ``petra.dmnd``, downloading and removing missing inputs as needed.
 
-    With ``marferret``, the MarFERReT proteins and taxon map are appended to the
-    main inputs.
+    ``taxonomy`` is the NCBI taxonomy directory whose ``nodes.dmp`` and
+    ``names.dmp`` are embedded so searches can use ``--taxonlist`` and
+    ``--taxon-exclude``. With ``marferret``, the MarFERReT proteins and taxon
+    map are appended to the main inputs.
     """
     diamond = _require_diamond(diamond_executable)
+    # DIAMOND runs inside the output directory, so relative paths would break.
+    taxonomy = validate_taxonomy_directory(taxonomy).resolve()
     fasta_path = _resolve_input(fasta, "FASTA") if fasta is not None else None
     taxon_map_path = (
         _resolve_input(taxon_map, "taxon map") if taxon_map is not None else None
@@ -257,6 +262,10 @@ def build_diamond_database(
             str(database_base),
             "--taxonmap",
             str(taxon_map_path),
+            "--taxonnodes",
+            str(taxonomy / "nodes.dmp"),
+            "--taxonnames",
+            str(taxonomy / "names.dmp"),
         ]
         logger.info("Building DIAMOND database at %s", database_path)
         if marferret:
