@@ -343,6 +343,8 @@ if "--in" in options:
 else:
     pathlib.Path(f"{base}.fasta").write_bytes(sys.stdin.buffer.read())
 shutil.copyfile(options["--taxonmap"], f"{base}.taxonmap")
+shutil.copyfile(options["--taxonnodes"], f"{base}.nodes")
+shutil.copyfile(options["--taxonnames"], f"{base}.names")
 exit_code = int(os.environ.get("DIAMOND_STUB_EXIT", "0"))
 if exit_code == 0:
     pathlib.Path(f"{base}.dmnd").touch()
@@ -386,6 +388,10 @@ class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
             database.MARFERRET_FASTA_URL: _gzip_bytes(MARFERRET_FASTA),
             database.MARFERRET_TAXON_MAP_URL: _gzip_bytes(MARFERRET_TAXON_MAP),
         }
+        self.taxonomy = self.directory / "taxonomy"
+        self.taxonomy.mkdir()
+        for filename in database.TAXONOMY_FILENAMES:
+            (self.taxonomy / filename).write_text(filename, encoding="utf-8")
 
     def _build(self, **inputs: Path) -> Path:
         with patch.object(database, "_download", _fake_download(self.payloads)):
@@ -393,6 +399,7 @@ class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
                 fasta=inputs.get("fasta"),
                 taxon_map=inputs.get("taxon_map"),
                 output=self.output,
+                taxonomy=self.taxonomy,
                 marferret=True,
             )
 
@@ -409,8 +416,14 @@ class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
         fasta, taxon_map = self._seen_by_makedb()
         self.assertEqual(fasta, NR_FASTA + MARFERRET_FASTA)
         self.assertEqual(taxon_map, NCBI_TAXON_MAP + "mft0000000001\t2593073\n")
+        base = self.output / "petra"
+        self.assertEqual(Path(f"{base}.nodes").read_text(), "nodes.dmp")
+        self.assertEqual(Path(f"{base}.names").read_text(), "names.dmp")
         leftovers = {path.name for path in self.output.iterdir()}
-        self.assertEqual(leftovers, {"petra.dmnd", "petra.fasta", "petra.taxonmap"})
+        self.assertEqual(
+            leftovers,
+            {"petra.dmnd", "petra.fasta", "petra.taxonmap", "petra.nodes", "petra.names"},
+        )
 
     def test_leaves_plain_user_inputs_untouched(self) -> None:
         fasta = self.directory / "proteins.faa"
@@ -438,7 +451,9 @@ class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
 
         self.assertIn("exit code 1", str(raised.exception))
         leftovers = {path.name for path in self.output.iterdir()}
-        self.assertEqual(leftovers, {"petra.fasta", "petra.taxonmap"})
+        self.assertEqual(
+            leftovers, {"petra.fasta", "petra.taxonmap", "petra.nodes", "petra.names"}
+        )
 
 
 class BuildRnaDatabasesTest(unittest.TestCase):

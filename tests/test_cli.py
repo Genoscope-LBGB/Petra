@@ -585,6 +585,9 @@ class BuildDbCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         install.assert_called_once_with(output=Path("database"), taxdump=None)
         diamond.assert_called_once()
+        self.assertEqual(
+            diamond.call_args.kwargs["taxonomy"], Path("database/taxonomy")
+        )
         rna.assert_not_called()
 
     def test_passes_a_local_taxdump_to_the_installer(self) -> None:
