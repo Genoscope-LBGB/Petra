@@ -1024,47 +1024,66 @@ def _resolve_taxids(
     taxonkit: str,
     taxonomy: Path,
 ) -> dict[str, int]:
-    """Map each record to the deepest unambiguous NCBI taxon in its lineage."""
+    """Map each record to the deepest NCBI taxon its lineage pins down.
+
+    Unique names are trusted until the first homonym in a lineage: PR2 and
+    EUKARYOME often place a taxon differently from NCBI, so checking every name
+    against its ancestors would truncate most lineages. From the first homonym
+    on, a name is accepted only when exactly one of its NCBI taxa descends from
+    the last accepted taxon. An unresolvable homonym is skipped, since it says
+    nothing about the deeper names (PR2 'Craniata' is also a brachiopod
+    class), while a unique name contradicting the accepted taxon ends the walk
+    (under the plant genus Sabatia, 'Sabatia pustulosa' is an NCBI mollusc).
+    """
     names = sorted({rank for ranks in ranks_by_identifier.values() for rank in ranks})
     if not names:
         return {}
     candidates_by_name = _name_to_taxid(names, taxonkit=taxonkit, taxonomy=taxonomy)
-    ambiguous_taxids = {
-        taxid
-        for candidates in candidates_by_name.values()
-        if len(candidates) > 1
-        for taxid in candidates
+    ambiguous_names = {
+        name for name, candidates in candidates_by_name.items() if len(candidates) > 1
     }
-    lineages = _taxid_lineage_names(
-        ambiguous_taxids, taxonkit=taxonkit, taxonomy=taxonomy
+    checked_names: set[str] = set()
+    for ranks in ranks_by_identifier.values():
+        for position, rank in enumerate(ranks):
+            if rank in ambiguous_names:
+                checked_names.update(ranks[position:])
+                break
+    lineages = _taxid_lineages(
+        {
+            taxid
+            for name in checked_names
+            for taxid in candidates_by_name.get(name, [])
+        },
+        taxonkit=taxonkit,
+        taxonomy=taxonomy,
     )
 
     taxids: dict[str, int] = {}
     for identifier, ranks in ranks_by_identifier.items():
-        accepted_names: list[str] = []
+        accepted: int | None = None
+        checking = False
         for rank in ranks:
             candidates = candidates_by_name.get(rank, [])
             if not candidates:
                 continue
-            if len(candidates) == 1:
-                taxid = candidates[0]
-            else:
-                matching = [
-                    candidate
-                    for candidate in candidates
-                    if all(
-                        ancestor in lineages.get(candidate, set())
-                        for ancestor in accepted_names
-                    )
-                ]
-                if len(matching) != 1:
-                    break
-                taxid = matching[0]
-            taxids[identifier] = taxid
-            accepted_names.append(rank)
+            checking = checking or len(candidates) > 1
+            if not checking:
+                accepted = candidates[0]
+                continue
+            matching = [
+                candidate
+                for candidate in candidates
+                if accepted is None or accepted in lineages.get(candidate, set())
+            ]
+            if len(matching) == 1:
+                accepted = matching[0]
+            elif len(candidates) == 1:
+                break
+        if accepted is not None:
+            taxids[identifier] = accepted
     logger.info(
         "Saw %d ambiguous taxon names; resolved a taxon for %d of %d records",
-        sum(len(candidates) > 1 for candidates in candidates_by_name.values()),
+        len(ambiguous_names),
         len(taxids),
         len(ranks_by_identifier),
     )
@@ -1107,16 +1126,21 @@ def _name_to_taxid(
     return resolved
 
 
-def _taxid_lineage_names(
+def _taxid_lineages(
     taxids: set[int], *, taxonkit: str, taxonomy: Path
-) -> dict[int, set[str]]:
+) -> dict[int, set[int]]:
+    """Return the taxids of each taxon's lineage, the taxon itself included.
+
+    Taxids rather than names, because taxonkit resolves synonyms (PR2's
+    'Proteobacteria') that never appear in a lineage of scientific names.
+    """
     if not taxids:
         return {}
     ordered_taxids = sorted(taxids)
-    logger.info("Reading lineages for %d ambiguous taxon candidates", len(taxids))
+    logger.info("Reading lineages for %d taxon candidates", len(taxids))
     try:
         process = subprocess.run(
-            [taxonkit, "--data-dir", str(taxonomy), "lineage"],
+            [taxonkit, "--data-dir", str(taxonomy), "lineage", "--show-lineage-taxids"],
             input="\n".join(str(taxid) for taxid in ordered_taxids) + "\n",
             capture_output=True,
             text=True,
@@ -1131,22 +1155,18 @@ def _taxid_lineage_names(
             f"taxonkit lineage failed with exit code {process.returncode}.{suffix}"
         )
 
-    lineages: dict[int, set[str]] = {}
+    lineages: dict[int, set[int]] = {}
     for line in process.stdout.splitlines():
         fields = line.split("\t")
         try:
             taxid = int(fields[0])
+            lineages[taxid] = {
+                int(ancestor) for ancestor in fields[2].split(";") if ancestor
+            }
         except (IndexError, ValueError) as error:
             raise DatabaseBuildError(
                 "Could not read taxonkit lineage output; its layout changed."
             ) from error
-        if len(fields) < 2:
-            raise DatabaseBuildError(
-                "Could not read taxonkit lineage output; its layout changed."
-            )
-        lineages[taxid] = {
-            name.strip() for name in fields[1].split(";") if name.strip()
-        }
     if not lineages:
         raise DatabaseBuildError(
             "Could not read taxonkit lineage output; its layout changed."
