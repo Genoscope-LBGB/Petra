@@ -948,42 +948,8 @@ class ResolveTaxidsTest(unittest.TestCase):
             args=[],
             returncode=0,
             stdout=(
-                "111\tcellular organisms;Eukaryota;Fungi;Duplicata\n"
-                "222\tcellular organisms;Bacteria;Duplicata\n"
-            ),
-            stderr="",
-        )
-
-        with patch.object(
-            database.subprocess, "run", side_effect=[name2taxid, lineages]
-        ) as run:
-            taxids = database._resolve_taxids(
-                {"seq1": ("Eukaryota", "Fungi", "Duplicata")},
-                taxonkit="taxonkit",
-                taxonomy=self.taxonomy,
-            )
-
-        self.assertEqual(taxids, {"seq1": 111})
-        self.assertEqual(run.call_count, 2)
-        self.assertEqual(
-            run.call_args_list[1].args[0],
-            ["taxonkit", "--data-dir", str(self.taxonomy), "lineage"],
-        )
-        self.assertEqual(run.call_args_list[1].kwargs["input"], "111\n222\n")
-
-    def test_falls_back_when_a_homonym_cannot_be_disambiguated(self) -> None:
-        name2taxid = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="Eukaryota\t2759\nDuplicata\t111\nDuplicata\t222\n",
-            stderr="",
-        )
-        lineages = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=(
-                "111\tcellular organisms;Bacteria;Duplicata\n"
-                "222\tcellular organisms;Archaea;Duplicata\n"
+                "111\tcellular organisms;Eukaryota;Fungi;Duplicata\t131567;2759;4751;111\n"
+                "222\tcellular organisms;Bacteria;Duplicata\t131567;2;222\n"
             ),
             stderr="",
         )
@@ -992,12 +958,56 @@ class ResolveTaxidsTest(unittest.TestCase):
             database.subprocess, "run", side_effect=[name2taxid, lineages]
         ):
             taxids = database._resolve_taxids(
-                {"seq1": ("Eukaryota", "Duplicata", "Known deeper rank")},
+                {"seq1": ("Eukaryota", "Fungi", "Duplicata")},
                 taxonkit="taxonkit",
                 taxonomy=self.taxonomy,
             )
 
-        self.assertEqual(taxids, {"seq1": 2759})
+        self.assertEqual(taxids, {"seq1": 111})
+
+    def test_skips_an_unresolvable_homonym_but_checks_the_names_below_it(
+        self,
+    ) -> None:
+        # 'Animalia' is an NCBI synonym of Metazoa: taxonkit resolves it, but
+        # it never appears among the scientific names of a lineage.
+        name2taxid = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "Eukaryota\t2759\nAnimalia\t33208\nDuplicata\t111\nDuplicata\t222\n"
+                "Piscis\t333\nPlanta\t444\n"
+            ),
+            stderr="",
+        )
+        lineages = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "111\tcellular organisms;Eukaryota;Metazoa;Chordata;Duplicata"
+                "\t131567;2759;33208;7711;111\n"
+                "222\tcellular organisms;Eukaryota;Metazoa;Brachiopoda;Duplicata"
+                "\t131567;2759;33208;7568;222\n"
+                "333\tcellular organisms;Eukaryota;Metazoa;Chordata;Duplicata;Piscis"
+                "\t131567;2759;33208;7711;111;333\n"
+                "444\tcellular organisms;Eukaryota;Viridiplantae;Planta"
+                "\t131567;2759;33090;444\n"
+            ),
+            stderr="",
+        )
+
+        with patch.object(
+            database.subprocess, "run", side_effect=[name2taxid, lineages]
+        ):
+            taxids = database._resolve_taxids(
+                {
+                    "fish": ("Eukaryota", "Animalia", "Duplicata", "Piscis"),
+                    "homonym": ("Eukaryota", "Animalia", "Duplicata", "Planta"),
+                },
+                taxonkit="taxonkit",
+                taxonomy=self.taxonomy,
+            )
+
+        self.assertEqual(taxids, {"fish": 333, "homonym": 33208})
 
     def test_name_resolution_preserves_every_distinct_candidate(self) -> None:
         completed = subprocess.CompletedProcess(
