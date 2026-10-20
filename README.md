@@ -26,6 +26,9 @@ snapshot instead. If the protein FASTA or taxon map is omitted, PETRA downloads
 NCBI NR or the full NCBI protein taxon map. Downloaded archives and DIAMOND
 inputs are removed after the build; the extracted taxonomy is retained. The
 command fails rather than replacing an existing download or `petra.dmnd`.
+The same taxonomy's `nodes.dmp` and `names.dmp` are embedded in `petra.dmnd`,
+so DIAMOND searches can restrict or drop hits by clade with `--taxonlist` or
+`--taxon-exclude`.
 
 Add `--with-marferret` to include the marine eukaryote proteins of
 [MarFERReT](https://github.com/armbrustlab/marferret) v1.1.1 in `petra.dmnd`,
