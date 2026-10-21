@@ -72,6 +72,8 @@ Only contigs of at least 5 kb are considered for the FASTA and organelle outputs
 - `--skip-taxonomic-assignment` runs only the RNA analyses and Whokaryote.
 - `--keep-whokaryote-euk-headers` keeps the names of sequences Whokaryote
   calls eukaryotic in `whokaryote.euk.txt`.
+- `--keep-pyrodigal-predictions` keeps Pyrodigal's predicted proteins in
+  `predictions.faa`.
 - `--technology ont` switches read mapping from PacBio HiFi to ONT.
 
 ## Looking at the results
