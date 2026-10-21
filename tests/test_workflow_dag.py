@@ -135,6 +135,7 @@ class WorkflowDagTest(unittest.TestCase):
             "trna": trna,
             "skip_taxonomic_assignment": skip_taxonomic_assignment,
             "keep_whokaryote_euk_headers": False,
+            "keep_pyrodigal_predictions": False,
             "rrna_chunks": 16,
             "rrna_min_alignment_length": 200,
             "host_taxon": None,

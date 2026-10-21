@@ -372,6 +372,14 @@ def run(
             rich_help_panel="Execution",
         ),
     ] = False,
+    keep_pyrodigal_predictions: Annotated[
+        bool,
+        typer.Option(
+            "--keep-pyrodigal-predictions",
+            help="Keep Pyrodigal's predicted proteins as predictions.faa.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
     summary_font_size: Annotated[
         float,
         typer.Option(
@@ -548,6 +556,7 @@ def run(
             "trna": trna,
             "skip_taxonomic_assignment": skip_taxonomic_assignment,
             "keep_whokaryote_euk_headers": keep_whokaryote_euk_headers,
+            "keep_pyrodigal_predictions": keep_pyrodigal_predictions,
             "rrna_chunks": _RRNA_CHUNKS,
             "rrna_min_alignment_length": rrna_min_alignment_length,
             "host_taxon": host_taxon,
