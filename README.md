@@ -70,6 +70,8 @@ Only contigs of at least 5 kb are considered for the FASTA and organelle outputs
   phylum are flagged as `non_host`.
 - `--trna` annotates tRNAs.
 - `--skip-taxonomic-assignment` runs only the RNA analyses and Whokaryote.
+- `--keep-whokaryote-euk-headers` keeps the names of sequences Whokaryote
+  calls eukaryotic in `whokaryote.euk.txt`.
 - `--technology ont` switches read mapping from PacBio HiFi to ONT.
 
 ## Looking at the results
