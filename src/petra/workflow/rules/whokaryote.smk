@@ -7,6 +7,11 @@ rule whokaryote:
         predictions=temp("predictions.whokaryote.tsv"),
         tiara_predictions=temp("predictions.tiara.tsv"),
         noneuk="whokaryote.noneuk.txt",
+        euk=(
+            "whokaryote.euk.txt"
+            if config["keep_whokaryote_euk_headers"]
+            else temp("whokaryote.euk.txt")
+        ),
     log:
         "logs/whokaryote.log",
     benchmark:
@@ -24,7 +29,10 @@ rule whokaryote:
         "cp {params.output_directory:q}/tiara_pred.txt "
         "{output.tiara_predictions:q} && "
         "cp {params.output_directory:q}/prokaryote_contig_headers.txt "
-        "{output.noneuk:q}"
+        "{output.noneuk:q} && "
+        "touch {params.output_directory:q}/eukaryote_contig_headers.txt && "
+        "cp {params.output_directory:q}/eukaryote_contig_headers.txt "
+        "{output.euk:q}"
 
 
 rule extract_organelles:

@@ -361,6 +361,17 @@ def run(
             rich_help_panel="Execution",
         ),
     ] = False,
+    keep_whokaryote_euk_headers: Annotated[
+        bool,
+        typer.Option(
+            "--keep-whokaryote-euk-headers",
+            help=(
+                "Keep Whokaryote's eukaryotic sequence names as "
+                "whokaryote.euk.txt."
+            ),
+            rich_help_panel="Execution",
+        ),
+    ] = False,
     summary_font_size: Annotated[
         float,
         typer.Option(
@@ -536,6 +547,7 @@ def run(
             "rrna": rrna,
             "trna": trna,
             "skip_taxonomic_assignment": skip_taxonomic_assignment,
+            "keep_whokaryote_euk_headers": keep_whokaryote_euk_headers,
             "rrna_chunks": _RRNA_CHUNKS,
             "rrna_min_alignment_length": rrna_min_alignment_length,
             "host_taxon": host_taxon,
