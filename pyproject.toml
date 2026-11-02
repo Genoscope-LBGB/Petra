@@ -20,8 +20,8 @@ dependencies = [
   "polars[rtcompat]>=1.35,<2",
   "PyYAML>=6.0,<7",
   "rich>=13.8,<16",
-  "snakemake>=9,<10",
-  "snakemake-executor-plugin-slurm>=2.7,<3",
+  "snakemake",
+  "snakemake-executor-plugin-slurm",
   "typer>=0.27,<1",
 ]
 classifiers = [

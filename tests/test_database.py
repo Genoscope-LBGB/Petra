@@ -10,7 +10,9 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from email.message import Message
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from petra import database
@@ -238,6 +240,220 @@ class InstallTaxonomyDatabaseTest(unittest.TestCase):
             )
 
         self.assertIn("nodes.dmp", str(raised.exception))
+
+
+class _Response(io.BytesIO):
+    """An HTTP response that drops the connection after ``reset_after`` bytes."""
+
+    def __init__(self, payload: bytes, status: int, reset_after: int | None) -> None:
+        super().__init__(payload)
+        self.status = status
+        self.reset_after = reset_after
+
+    def read(self, size: int | None = -1) -> bytes:
+        if self.reset_after is None:
+            return super().read(size)
+        left = self.reset_after - self.tell()
+        if left <= 0:
+            raise ConnectionResetError(104, "Connection reset by peer")
+        if size is None or size < 0 or size > left:
+            size = left
+        return super().read(size)
+
+
+class DownloadTest(unittest.TestCase):
+    url = "https://example.org/proteins.faa.gz"
+    payload = b"0123456789" * 1000
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.destination = Path(self.temporary.name) / "proteins.faa.gz"
+        self.ranges: list[str | None] = []
+        sleep = patch.object(database.time, "sleep")
+        sleep.start()
+        self.addCleanup(sleep.stop)
+
+    def _serve(self, *outcomes: BaseException | int | None):
+        """Answer each request with the next outcome: an exception to raise, a
+        byte count after which the connection resets, or None to finish."""
+        remaining = list(outcomes)
+
+        def urlopen(request, timeout):
+            requested = request.get_header("Range")
+            self.ranges.append(requested)
+            outcome = remaining.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            offset = (
+                int(requested.removeprefix("bytes=").rstrip("-")) if requested else 0
+            )
+            status = 206 if requested else 200
+            return _Response(self.payload[offset:], status, outcome)
+
+        return patch.object(database, "urlopen", urlopen)
+
+    def test_retries_a_connection_reset_before_any_data(self) -> None:
+        reset = URLError(ConnectionResetError(104, "Connection reset by peer"))
+        with self._serve(reset, None):
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertEqual(self.destination.read_bytes(), self.payload)
+
+    def test_resumes_from_the_bytes_already_downloaded(self) -> None:
+        with self._serve(3000, None):
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertEqual(self.destination.read_bytes(), self.payload)
+        self.assertEqual(self.ranges, [None, "bytes=3000-"])
+
+    def test_does_not_retry_a_missing_file(self) -> None:
+        missing = HTTPError(self.url, 404, "Not Found", Message(), None)
+        with self._serve(missing), self.assertRaises(DatabaseBuildError) as raised:
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertIn("after 1 attempt(s)", str(raised.exception))
+        self.assertFalse(self.destination.exists())
+
+    def test_gives_up_and_removes_the_partial_file(self) -> None:
+        attempts = [100] * database._DOWNLOAD_ATTEMPTS
+        with self._serve(*attempts), self.assertRaises(DatabaseBuildError) as raised:
+            database._download(self.url, self.destination, "proteins")
+
+        self.assertIn("Connection reset by peer", str(raised.exception))
+        self.assertEqual(len(self.ranges), database._DOWNLOAD_ATTEMPTS)
+        self.assertFalse(self.destination.exists())
+
+
+# Captures what makedb read, since the build removes its inputs afterwards.
+_DIAMOND_STUB = """\
+import os
+import pathlib
+import shutil
+import sys
+
+arguments = sys.argv[1:]
+if arguments[0] == "version":
+    print("diamond version 2.2.8")
+    sys.exit(0)
+options = dict(zip(arguments[1::2], arguments[2::2]))
+base = pathlib.Path(options["--db"])
+if "--in" in options:
+    shutil.copyfile(options["--in"], f"{base}.fasta")
+else:
+    pathlib.Path(f"{base}.fasta").write_bytes(sys.stdin.buffer.read())
+shutil.copyfile(options["--taxonmap"], f"{base}.taxonmap")
+shutil.copyfile(options["--taxonnodes"], f"{base}.nodes")
+shutil.copyfile(options["--taxonnames"], f"{base}.names")
+exit_code = int(os.environ.get("DIAMOND_STUB_EXIT", "0"))
+if exit_code == 0:
+    pathlib.Path(f"{base}.dmnd").touch()
+sys.exit(exit_code)
+"""
+NR_FASTA = ">WP_000001.1 protein [Escherichia coli]\nMKVLA\n"
+NCBI_TAXON_MAP = "accession.version\ttaxid\nWP_000001.1\t562\n"
+LEGACY_TAXON_MAP = (
+    "accession\taccession.version\ttaxid\tgi\nWP_000001\tWP_000001.1\t562\t1\n"
+)
+MARFERRET_FASTA = ">mft0000000001 \nMSTNP\n"
+MARFERRET_TAXON_MAP = (
+    "accession\taccession.version\ttaxid\tgi\nNA\tmft0000000001\t2593073\tNA\n"
+)
+
+
+def _maybe_gunzip(payload: bytes) -> str:
+    if payload[:2] == b"\x1f\x8b":
+        payload = gzip.decompress(payload)
+    return payload.decode("utf-8")
+
+
+class BuildDiamondDatabaseMarferretTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        tools = self.directory / "tools"
+        tools.mkdir()
+        script = _write_stub(tools, "diamond")
+        script.write_text(_DIAMOND_STUB, encoding="utf-8")
+        self.output = self.directory / "database"
+        patched_path = patch.dict(
+            os.environ, {"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}"}
+        )
+        patched_path.start()
+        self.addCleanup(patched_path.stop)
+        self.payloads = {
+            database.NR_URL: _gzip_bytes(NR_FASTA),
+            database.TAXON_MAP_URL: _gzip_bytes(NCBI_TAXON_MAP),
+            database.MARFERRET_FASTA_URL: _gzip_bytes(MARFERRET_FASTA),
+            database.MARFERRET_TAXON_MAP_URL: _gzip_bytes(MARFERRET_TAXON_MAP),
+        }
+        self.taxonomy = self.directory / "taxonomy"
+        self.taxonomy.mkdir()
+        for filename in database.TAXONOMY_FILENAMES:
+            (self.taxonomy / filename).write_text(filename, encoding="utf-8")
+
+    def _build(self, **inputs: Path) -> Path:
+        with patch.object(database, "_download", _fake_download(self.payloads)):
+            return database.build_diamond_database(
+                fasta=inputs.get("fasta"),
+                taxon_map=inputs.get("taxon_map"),
+                output=self.output,
+                taxonomy=self.taxonomy,
+                marferret=True,
+            )
+
+    def _seen_by_makedb(self) -> tuple[str, str]:
+        base = self.output / "petra"
+        return (
+            _maybe_gunzip(Path(f"{base}.fasta").read_bytes()),
+            _maybe_gunzip(Path(f"{base}.taxonmap").read_bytes()),
+        )
+
+    def test_appends_marferret_to_the_downloaded_nr_inputs(self) -> None:
+        self.assertTrue(self._build().is_file())
+
+        fasta, taxon_map = self._seen_by_makedb()
+        self.assertEqual(fasta, NR_FASTA + MARFERRET_FASTA)
+        self.assertEqual(taxon_map, NCBI_TAXON_MAP + "mft0000000001\t2593073\n")
+        base = self.output / "petra"
+        self.assertEqual(Path(f"{base}.nodes").read_text(), "nodes.dmp")
+        self.assertEqual(Path(f"{base}.names").read_text(), "names.dmp")
+        leftovers = {path.name for path in self.output.iterdir()}
+        self.assertEqual(
+            leftovers,
+            {"petra.dmnd", "petra.fasta", "petra.taxonmap", "petra.nodes", "petra.names"},
+        )
+
+    def test_leaves_plain_user_inputs_untouched(self) -> None:
+        fasta = self.directory / "proteins.faa"
+        fasta.write_text(NR_FASTA, encoding="utf-8")
+        taxon_map = self.directory / "proteins.accession2taxid"
+        taxon_map.write_text(LEGACY_TAXON_MAP, encoding="utf-8")
+
+        self._build(fasta=fasta, taxon_map=taxon_map)
+
+        seen_fasta, seen_taxon_map = self._seen_by_makedb()
+        self.assertEqual(seen_fasta, NR_FASTA + MARFERRET_FASTA)
+        self.assertEqual(
+            seen_taxon_map, LEGACY_TAXON_MAP + "NA\tmft0000000001\t2593073\tNA\n"
+        )
+        self.assertEqual(fasta.read_text(encoding="utf-8"), NR_FASTA)
+        self.assertEqual(taxon_map.read_text(encoding="utf-8"), LEGACY_TAXON_MAP)
+        self.assertFalse((self.output / "petra.accession2taxid").exists())
+
+    def test_removes_every_download_when_makedb_fails(self) -> None:
+        with (
+            patch.dict(os.environ, {"DIAMOND_STUB_EXIT": "1"}),
+            self.assertRaises(DatabaseBuildError) as raised,
+        ):
+            self._build()
+
+        self.assertIn("exit code 1", str(raised.exception))
+        leftovers = {path.name for path in self.output.iterdir()}
+        self.assertEqual(
+            leftovers, {"petra.fasta", "petra.taxonmap", "petra.nodes", "petra.names"}
+        )
 
 
 class BuildRnaDatabasesTest(unittest.TestCase):
@@ -732,42 +948,8 @@ class ResolveTaxidsTest(unittest.TestCase):
             args=[],
             returncode=0,
             stdout=(
-                "111\tcellular organisms;Eukaryota;Fungi;Duplicata\n"
-                "222\tcellular organisms;Bacteria;Duplicata\n"
-            ),
-            stderr="",
-        )
-
-        with patch.object(
-            database.subprocess, "run", side_effect=[name2taxid, lineages]
-        ) as run:
-            taxids = database._resolve_taxids(
-                {"seq1": ("Eukaryota", "Fungi", "Duplicata")},
-                taxonkit="taxonkit",
-                taxonomy=self.taxonomy,
-            )
-
-        self.assertEqual(taxids, {"seq1": 111})
-        self.assertEqual(run.call_count, 2)
-        self.assertEqual(
-            run.call_args_list[1].args[0],
-            ["taxonkit", "--data-dir", str(self.taxonomy), "lineage"],
-        )
-        self.assertEqual(run.call_args_list[1].kwargs["input"], "111\n222\n")
-
-    def test_falls_back_when_a_homonym_cannot_be_disambiguated(self) -> None:
-        name2taxid = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout="Eukaryota\t2759\nDuplicata\t111\nDuplicata\t222\n",
-            stderr="",
-        )
-        lineages = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=(
-                "111\tcellular organisms;Bacteria;Duplicata\n"
-                "222\tcellular organisms;Archaea;Duplicata\n"
+                "111\tcellular organisms;Eukaryota;Fungi;Duplicata\t131567;2759;4751;111\n"
+                "222\tcellular organisms;Bacteria;Duplicata\t131567;2;222\n"
             ),
             stderr="",
         )
@@ -776,12 +958,56 @@ class ResolveTaxidsTest(unittest.TestCase):
             database.subprocess, "run", side_effect=[name2taxid, lineages]
         ):
             taxids = database._resolve_taxids(
-                {"seq1": ("Eukaryota", "Duplicata", "Known deeper rank")},
+                {"seq1": ("Eukaryota", "Fungi", "Duplicata")},
                 taxonkit="taxonkit",
                 taxonomy=self.taxonomy,
             )
 
-        self.assertEqual(taxids, {"seq1": 2759})
+        self.assertEqual(taxids, {"seq1": 111})
+
+    def test_skips_an_unresolvable_homonym_but_checks_the_names_below_it(
+        self,
+    ) -> None:
+        # 'Animalia' is an NCBI synonym of Metazoa: taxonkit resolves it, but
+        # it never appears among the scientific names of a lineage.
+        name2taxid = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "Eukaryota\t2759\nAnimalia\t33208\nDuplicata\t111\nDuplicata\t222\n"
+                "Piscis\t333\nPlanta\t444\n"
+            ),
+            stderr="",
+        )
+        lineages = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "111\tcellular organisms;Eukaryota;Metazoa;Chordata;Duplicata"
+                "\t131567;2759;33208;7711;111\n"
+                "222\tcellular organisms;Eukaryota;Metazoa;Brachiopoda;Duplicata"
+                "\t131567;2759;33208;7568;222\n"
+                "333\tcellular organisms;Eukaryota;Metazoa;Chordata;Duplicata;Piscis"
+                "\t131567;2759;33208;7711;111;333\n"
+                "444\tcellular organisms;Eukaryota;Viridiplantae;Planta"
+                "\t131567;2759;33090;444\n"
+            ),
+            stderr="",
+        )
+
+        with patch.object(
+            database.subprocess, "run", side_effect=[name2taxid, lineages]
+        ):
+            taxids = database._resolve_taxids(
+                {
+                    "fish": ("Eukaryota", "Animalia", "Duplicata", "Piscis"),
+                    "homonym": ("Eukaryota", "Animalia", "Duplicata", "Planta"),
+                },
+                taxonkit="taxonkit",
+                taxonomy=self.taxonomy,
+            )
+
+        self.assertEqual(taxids, {"fish": 333, "homonym": 33208})
 
     def test_name_resolution_preserves_every_distinct_candidate(self) -> None:
         completed = subprocess.CompletedProcess(

@@ -17,6 +17,7 @@ from .database import (
     COVARIANCE_MODEL_FILENAME,
     DIAMOND_DATABASE_FILENAME,
     LSU_DATABASE_FILENAME,
+    MARFERRET_VERSION,
     SSU_DATABASE_FILENAME,
     TAXONOMY_DIRECTORY_NAME,
     DatabaseBuildError,
@@ -360,6 +361,25 @@ def run(
             rich_help_panel="Execution",
         ),
     ] = False,
+    keep_whokaryote_euk_headers: Annotated[
+        bool,
+        typer.Option(
+            "--keep-whokaryote-euk-headers",
+            help=(
+                "Keep Whokaryote's eukaryotic sequence names as "
+                "whokaryote.euk.txt."
+            ),
+            rich_help_panel="Execution",
+        ),
+    ] = False,
+    keep_pyrodigal_predictions: Annotated[
+        bool,
+        typer.Option(
+            "--keep-pyrodigal-predictions",
+            help="Keep Pyrodigal's predicted proteins as predictions.faa.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
     summary_font_size: Annotated[
         float,
         typer.Option(
@@ -535,6 +555,8 @@ def run(
             "rrna": rrna,
             "trna": trna,
             "skip_taxonomic_assignment": skip_taxonomic_assignment,
+            "keep_whokaryote_euk_headers": keep_whokaryote_euk_headers,
+            "keep_pyrodigal_predictions": keep_pyrodigal_predictions,
             "rrna_chunks": _RRNA_CHUNKS,
             "rrna_min_alignment_length": rrna_min_alignment_length,
             "host_taxon": host_taxon,
@@ -601,6 +623,17 @@ def build_db(
             rich_help_panel="Inputs",
         ),
     ] = None,
+    with_marferret: Annotated[
+        bool,
+        typer.Option(
+            "--with-marferret",
+            help=(
+                "Add the MarFERReT marine eukaryote proteins "
+                f"({MARFERRET_VERSION}) to the DIAMOND database."
+            ),
+            rich_help_panel="Inputs",
+        ),
+    ] = False,
     taxdump: Annotated[
         Path | None,
         typer.Option(
@@ -645,10 +678,12 @@ def build_db(
             "--skip-diamond-db leaves nothing to build. Add --build-rna-dbs.",
             param_hint="--skip-diamond-db",
         )
-    if skip_diamond_db and (fasta is not None or taxon_map is not None):
+    if skip_diamond_db and (
+        fasta is not None or taxon_map is not None or with_marferret
+    ):
         raise typer.BadParameter(
-            "--fasta and --taxon-map only feed the DIAMOND database, which "
-            "--skip-diamond-db disables.",
+            "--fasta, --taxon-map and --with-marferret only feed the DIAMOND "
+            "database, which --skip-diamond-db disables.",
             param_hint="--skip-diamond-db",
         )
 
@@ -659,6 +694,8 @@ def build_db(
                 fasta=fasta,
                 taxon_map=taxon_map,
                 output=output,
+                taxonomy=taxonomy,
+                marferret=with_marferret,
             )
         if build_rna_dbs:
             build_rna_databases(output=output, taxonomy=taxonomy)

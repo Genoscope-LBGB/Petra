@@ -9,7 +9,11 @@ rule pyrodigal:
         assembly=config["assembly"],
     output:
         gff=temp("predictions.gff"),
-        proteins=temp("predictions.faa"),
+        proteins=(
+            "predictions.faa"
+            if config["keep_pyrodigal_predictions"]
+            else temp("predictions.faa")
+        ),
     log:
         "logs/pyrodigal.log",
     benchmark:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import io
 import logging
 import re
 import shlex
@@ -8,10 +9,14 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 import zipfile
+from contextlib import ExitStack
 from dataclasses import dataclass
+from http.client import HTTPException
 from pathlib import Path
-from urllib.error import URLError
+from typing import BinaryIO
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -44,6 +49,14 @@ PR2_SSU_URL = (
 EUKARYOME_LSU_URL = (
     "https://sisu.ut.ee/wp-content/uploads/sites/643/General_EUK_LSU_v2.0.zip"
 )
+MARFERRET_VERSION = "v1.1.1"
+_MARFERRET_RECORD = "https://zenodo.org/records/10553848/files"
+MARFERRET_FASTA_URL = (
+    f"{_MARFERRET_RECORD}/MarFERReT.{MARFERRET_VERSION}.proteins.faa.gz"
+)
+MARFERRET_TAXON_MAP_URL = (
+    f"{_MARFERRET_RECORD}/MarFERReT.{MARFERRET_VERSION}.taxonomies.tab.gz"
+)
 
 # 5S, 5.8S, and the per-domain SSU and LSU Rfam families, as used by cmscan.
 RRNA_CM_ACCESSIONS = (
@@ -69,6 +82,10 @@ TAXONOMY_DIRECTORY_NAME = "taxonomy"
 TAXONOMY_FILENAMES = ("names.dmp", "nodes.dmp", "delnodes.dmp", "merged.dmp")
 _NR_FILENAME = "nr.gz"
 _TAXON_MAP_FILENAME = "prot.accession2taxid.FULL.gz"
+_MARFERRET_FASTA_FILENAME = f"MarFERReT.{MARFERRET_VERSION}.proteins.faa.gz"
+_MARFERRET_TAXON_MAP_FILENAME = f"MarFERReT.{MARFERRET_VERSION}.taxonomies.tab.gz"
+_COMBINED_TAXON_MAP_FILENAME = "petra.accession2taxid"
+_GZIP_MAGIC = b"\x1f\x8b"
 _TAXDUMP_ARCHIVE_FILENAME = "taxdump.tar.gz"
 _RNA_SOURCE_DIRNAME = "rna_sources"
 _CM_INDEX_SUFFIXES = (".i1f", ".i1i", ".i1m", ".i1p")
@@ -79,6 +96,10 @@ _PR2_DOMAINS = frozenset({"Eukaryota", "Bacteria", "Archaea"})
 _RANK_PREFIX = re.compile(r"^[a-z]__")
 _EUKARYOME_PLACEHOLDER = "unclassified"
 _DOWNLOAD_TIMEOUT_SECONDS = 60
+_DOWNLOAD_ATTEMPTS = 5
+_DOWNLOAD_RETRY_DELAY_SECONDS = 30
+# Rate limiting and gateway errors are transient; other HTTP errors are not.
+_RETRYABLE_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
 logger = logging.getLogger(__name__)
 
@@ -163,10 +184,20 @@ def build_diamond_database(
     fasta: Path | None,
     taxon_map: Path | None,
     output: Path,
+    taxonomy: Path,
+    marferret: bool = False,
     diamond_executable: str = "diamond",
 ) -> Path:
-    """Build ``petra.dmnd``, downloading and removing missing inputs as needed."""
+    """Build ``petra.dmnd``, downloading and removing missing inputs as needed.
+
+    ``taxonomy`` is the NCBI taxonomy directory whose ``nodes.dmp`` and
+    ``names.dmp`` are embedded so searches can use ``--taxonlist`` and
+    ``--taxon-exclude``. With ``marferret``, the MarFERReT proteins and taxon
+    map are appended to the main inputs.
+    """
     diamond = _require_diamond(diamond_executable)
+    # DIAMOND runs inside the output directory, so relative paths would break.
+    taxonomy = validate_taxonomy_directory(taxonomy).resolve()
     fasta_path = _resolve_input(fasta, "FASTA") if fasta is not None else None
     taxon_map_path = (
         _resolve_input(taxon_map, "taxon map") if taxon_map is not None else None
@@ -185,6 +216,20 @@ def build_diamond_database(
     if taxon_map_path is None:
         taxon_map_path = output_directory / _TAXON_MAP_FILENAME
         _reject_existing_download(taxon_map_path)
+    marferret_fasta = output_directory / _MARFERRET_FASTA_FILENAME
+    marferret_taxon_map = output_directory / _MARFERRET_TAXON_MAP_FILENAME
+    # A user-supplied map must stay untouched, so MarFERReT goes into a copy;
+    # the downloaded NCBI map is ours to extend in place.
+    combined_taxon_map = (
+        output_directory / _COMBINED_TAXON_MAP_FILENAME
+        if marferret and taxon_map is not None
+        else None
+    )
+    if marferret:
+        _reject_existing_download(marferret_fasta)
+        _reject_existing_download(marferret_taxon_map)
+    if combined_taxon_map is not None:
+        _reject_existing_download(combined_taxon_map)
 
     try:
         if fasta is None:
@@ -193,25 +238,52 @@ def build_diamond_database(
         if taxon_map is None:
             _download(TAXON_MAP_URL, taxon_map_path, "NCBI protein taxon map")
             downloads.append(taxon_map_path)
+        if marferret:
+            logger.info(
+                "Adding MarFERReT %s to the DIAMOND database", MARFERRET_VERSION
+            )
+            _download(MARFERRET_FASTA_URL, marferret_fasta, "MarFERReT FASTA")
+            downloads.append(marferret_fasta)
+            _download(
+                MARFERRET_TAXON_MAP_URL, marferret_taxon_map, "MarFERReT taxon map"
+            )
+            downloads.append(marferret_taxon_map)
+            if combined_taxon_map is not None:
+                downloads.append(combined_taxon_map)
+                _copy_file(taxon_map_path, combined_taxon_map)
+                taxon_map_path = combined_taxon_map
+            _append_marferret_taxon_map(marferret_taxon_map, taxon_map_path)
 
-        arguments = [
-            diamond,
-            "makedb",
-            "--in",
-            str(fasta_path),
+        arguments = [diamond, "makedb"]
+        if not marferret:
+            arguments += ["--in", str(fasta_path)]
+        arguments += [
             "--db",
             str(database_base),
             "--taxonmap",
             str(taxon_map_path),
+            "--taxonnodes",
+            str(taxonomy / "nodes.dmp"),
+            "--taxonnames",
+            str(taxonomy / "names.dmp"),
         ]
         logger.info("Building DIAMOND database at %s", database_path)
-        try:
-            process = subprocess.run(arguments, cwd=output_directory, check=False)
-        except OSError as error:
-            raise DatabaseBuildError(f"Could not run DIAMOND: {error}") from error
-        if process.returncode != 0:
+        if marferret:
+            returncode = _run_makedb_on_stdin(
+                arguments,
+                cwd=output_directory,
+                fasta=fasta_path,
+                extra_fasta=marferret_fasta,
+            )
+        else:
+            try:
+                process = subprocess.run(arguments, cwd=output_directory, check=False)
+            except OSError as error:
+                raise DatabaseBuildError(f"Could not run DIAMOND: {error}") from error
+            returncode = process.returncode
+        if returncode != 0:
             raise DatabaseBuildError(
-                f"DIAMOND database build failed with exit code {process.returncode}."
+                f"DIAMOND database build failed with exit code {returncode}."
             )
         if not database_path.is_file():
             raise DatabaseBuildError(
@@ -225,6 +297,109 @@ def build_diamond_database(
     _remove_downloads(downloads, strict=True)
     logger.info("DIAMOND database ready: %s", database_path)
     return database_path
+
+
+def _run_makedb_on_stdin(
+    arguments: list[str], *, cwd: Path, fasta: Path, extra_fasta: Path
+) -> int:
+    """Stream ``fasta`` then the gzipped ``extra_fasta`` into ``diamond makedb``.
+
+    DIAMOND takes a single ``--in`` file, and concatenating NR on disk would
+    duplicate a 200 GB file. Gzip members may follow each other, so a gzipped
+    FASTA is followed by the raw MarFERReT bytes; a plain one by its text.
+    """
+    try:
+        process = subprocess.Popen(arguments, cwd=cwd, stdin=subprocess.PIPE)
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not run DIAMOND: {error}") from error
+    assert process.stdin is not None
+    try:
+        with process.stdin as stream:
+            with fasta.open("rb") as source:
+                shutil.copyfileobj(source, stream)
+            _append_gzip_content(extra_fasta, stream, compressed=_is_gzip(fasta))
+    except BrokenPipeError:
+        # DIAMOND exited early; its exit code explains why.
+        pass
+    except BaseException:
+        process.kill()
+        process.wait()
+        raise
+    return process.wait()
+
+
+def _is_gzip(path: Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            return stream.read(len(_GZIP_MAGIC)) == _GZIP_MAGIC
+    except OSError as error:
+        raise DatabaseBuildError(f"Could not read {path}: {error}") from error
+
+
+def _copy_file(source: Path, destination: Path) -> None:
+    try:
+        with source.open("rb") as reader, destination.open("xb") as writer:
+            shutil.copyfileobj(reader, writer)
+    except OSError as error:
+        raise DatabaseBuildError(
+            f"Could not copy {source} to {destination}: {error}"
+        ) from error
+
+
+def _append_gzip_content(
+    source: Path, destination: BinaryIO, *, compressed: bool
+) -> None:
+    """Append the gzipped ``source`` to ``destination``, matching its encoding."""
+    try:
+        if compressed:
+            with source.open("rb") as reader:
+                shutil.copyfileobj(reader, destination)
+            return
+        with gzip.open(source, "rb") as reader:
+            shutil.copyfileobj(reader, destination)
+    except BrokenPipeError:
+        raise
+    except (OSError, EOFError) as error:
+        raise DatabaseBuildError(f"Could not append {source.name}: {error}") from error
+
+
+def _append_marferret_taxon_map(source: Path, destination: Path) -> None:
+    """Append MarFERReT's map to ``destination`` in the destination's own columns.
+
+    DIAMOND picks the map layout from the first header line, so every appended
+    row must match it: NCBI's ``FULL`` map has two columns while MarFERReT ships
+    the four-column ``accession accession.version taxid gi`` layout.
+    """
+    compressed = _is_gzip(destination)
+    try:
+        opener = gzip.open if compressed else open
+        with opener(destination, "rt", encoding="utf-8", newline="") as reader:
+            target_columns = reader.readline().rstrip("\r\n").split("\t")
+        with ExitStack() as stack:
+            reader = stack.enter_context(
+                gzip.open(source, "rt", encoding="utf-8", newline="")
+            )
+            source_columns = reader.readline().rstrip("\r\n").split("\t")
+            try:
+                indices = [source_columns.index(column) for column in target_columns]
+            except ValueError as error:
+                raise DatabaseBuildError(
+                    f"Cannot map {source.name} columns {source_columns} onto "
+                    f"{destination.name} columns {target_columns}"
+                ) from error
+            raw = stack.enter_context(destination.open("ab"))
+            writer = stack.enter_context(
+                io.TextIOWrapper(
+                    gzip.GzipFile(fileobj=raw, mode="wb") if compressed else raw,
+                    encoding="utf-8",
+                    newline="",
+                )
+            )
+            for line in reader:
+                fields = line.rstrip("\r\n").split("\t")
+                writer.write("\t".join(fields[index] for index in indices) + "\n")
+    except (OSError, EOFError) as error:
+        raise DatabaseBuildError(f"Could not append {source.name}: {error}") from error
 
 
 def _require_diamond(executable: str) -> str:
@@ -289,26 +464,67 @@ def _path_exists(path: Path) -> bool:
 
 
 def _download(url: str, destination: Path, label: str) -> None:
+    """Download ``url``, resuming after transient network failures.
+
+    Multi-gigabyte sources (NR, MarFERReT) routinely hit connection resets, so
+    each retry continues from the bytes already on disk when the server honours
+    range requests.
+    """
     logger.info("Downloading %s from %s", label, url)
     logger.info("Saving %s to %s", label, destination)
-    request = Request(url, headers={"User-Agent": "petra"})
-    created = False
     try:
-        with destination.open("xb") as output_stream:
-            created = True
-            with urlopen(request, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response:
-                shutil.copyfileobj(response, output_stream)
+        destination.open("xb").close()
     except FileExistsError as error:
         raise DatabaseBuildError(
             f"Download destination already exists: {destination}"
         ) from error
-    except (OSError, URLError) as error:
-        if created:
-            _remove_generated_file(destination)
+    except OSError as error:
         raise DatabaseBuildError(
             f"Could not download {label} from {url}: {error}"
         ) from error
-    logger.info("Downloaded %s to %s", label, destination)
+
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            _download_attempt(url, destination)
+        except (OSError, HTTPException) as error:
+            retryable = not isinstance(error, HTTPError) or (
+                error.code in _RETRYABLE_HTTP_CODES
+            )
+            if not retryable or attempt == _DOWNLOAD_ATTEMPTS:
+                _remove_generated_file(destination)
+                raise DatabaseBuildError(
+                    f"Could not download {label} from {url} after {attempt} "
+                    f"attempt(s): {error}"
+                ) from error
+            delay = _DOWNLOAD_RETRY_DELAY_SECONDS * 2 ** (attempt - 1)
+            logger.warning(
+                "Download of %s interrupted (%s); retrying in %d s (attempt %d/%d)",
+                label,
+                error,
+                delay,
+                attempt + 1,
+                _DOWNLOAD_ATTEMPTS,
+            )
+            time.sleep(delay)
+        except BaseException:
+            _remove_generated_file(destination)
+            raise
+        else:
+            logger.info("Downloaded %s to %s", label, destination)
+            return
+
+
+def _download_attempt(url: str, destination: Path) -> None:
+    offset = destination.stat().st_size
+    headers = {"User-Agent": "petra"}
+    if offset:
+        headers["Range"] = f"bytes={offset}-"
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response:
+        # A server that ignores the range resends the whole file from byte 0.
+        resumed = offset and response.status == 206
+        with destination.open("ab" if resumed else "wb") as output_stream:
+            shutil.copyfileobj(response, output_stream)
 
 
 def _remove_downloads(paths: list[Path], *, strict: bool) -> None:
@@ -808,47 +1024,66 @@ def _resolve_taxids(
     taxonkit: str,
     taxonomy: Path,
 ) -> dict[str, int]:
-    """Map each record to the deepest unambiguous NCBI taxon in its lineage."""
+    """Map each record to the deepest NCBI taxon its lineage pins down.
+
+    Unique names are trusted until the first homonym in a lineage: PR2 and
+    EUKARYOME often place a taxon differently from NCBI, so checking every name
+    against its ancestors would truncate most lineages. From the first homonym
+    on, a name is accepted only when exactly one of its NCBI taxa descends from
+    the last accepted taxon. An unresolvable homonym is skipped, since it says
+    nothing about the deeper names (PR2 'Craniata' is also a brachiopod
+    class), while a unique name contradicting the accepted taxon ends the walk
+    (under the plant genus Sabatia, 'Sabatia pustulosa' is an NCBI mollusc).
+    """
     names = sorted({rank for ranks in ranks_by_identifier.values() for rank in ranks})
     if not names:
         return {}
     candidates_by_name = _name_to_taxid(names, taxonkit=taxonkit, taxonomy=taxonomy)
-    ambiguous_taxids = {
-        taxid
-        for candidates in candidates_by_name.values()
-        if len(candidates) > 1
-        for taxid in candidates
+    ambiguous_names = {
+        name for name, candidates in candidates_by_name.items() if len(candidates) > 1
     }
-    lineages = _taxid_lineage_names(
-        ambiguous_taxids, taxonkit=taxonkit, taxonomy=taxonomy
+    checked_names: set[str] = set()
+    for ranks in ranks_by_identifier.values():
+        for position, rank in enumerate(ranks):
+            if rank in ambiguous_names:
+                checked_names.update(ranks[position:])
+                break
+    lineages = _taxid_lineages(
+        {
+            taxid
+            for name in checked_names
+            for taxid in candidates_by_name.get(name, [])
+        },
+        taxonkit=taxonkit,
+        taxonomy=taxonomy,
     )
 
     taxids: dict[str, int] = {}
     for identifier, ranks in ranks_by_identifier.items():
-        accepted_names: list[str] = []
+        accepted: int | None = None
+        checking = False
         for rank in ranks:
             candidates = candidates_by_name.get(rank, [])
             if not candidates:
                 continue
-            if len(candidates) == 1:
-                taxid = candidates[0]
-            else:
-                matching = [
-                    candidate
-                    for candidate in candidates
-                    if all(
-                        ancestor in lineages.get(candidate, set())
-                        for ancestor in accepted_names
-                    )
-                ]
-                if len(matching) != 1:
-                    break
-                taxid = matching[0]
-            taxids[identifier] = taxid
-            accepted_names.append(rank)
+            checking = checking or len(candidates) > 1
+            if not checking:
+                accepted = candidates[0]
+                continue
+            matching = [
+                candidate
+                for candidate in candidates
+                if accepted is None or accepted in lineages.get(candidate, set())
+            ]
+            if len(matching) == 1:
+                accepted = matching[0]
+            elif len(candidates) == 1:
+                break
+        if accepted is not None:
+            taxids[identifier] = accepted
     logger.info(
         "Saw %d ambiguous taxon names; resolved a taxon for %d of %d records",
-        sum(len(candidates) > 1 for candidates in candidates_by_name.values()),
+        len(ambiguous_names),
         len(taxids),
         len(ranks_by_identifier),
     )
@@ -891,16 +1126,21 @@ def _name_to_taxid(
     return resolved
 
 
-def _taxid_lineage_names(
+def _taxid_lineages(
     taxids: set[int], *, taxonkit: str, taxonomy: Path
-) -> dict[int, set[str]]:
+) -> dict[int, set[int]]:
+    """Return the taxids of each taxon's lineage, the taxon itself included.
+
+    Taxids rather than names, because taxonkit resolves synonyms (PR2's
+    'Proteobacteria') that never appear in a lineage of scientific names.
+    """
     if not taxids:
         return {}
     ordered_taxids = sorted(taxids)
-    logger.info("Reading lineages for %d ambiguous taxon candidates", len(taxids))
+    logger.info("Reading lineages for %d taxon candidates", len(taxids))
     try:
         process = subprocess.run(
-            [taxonkit, "--data-dir", str(taxonomy), "lineage"],
+            [taxonkit, "--data-dir", str(taxonomy), "lineage", "--show-lineage-taxids"],
             input="\n".join(str(taxid) for taxid in ordered_taxids) + "\n",
             capture_output=True,
             text=True,
@@ -915,22 +1155,18 @@ def _taxid_lineage_names(
             f"taxonkit lineage failed with exit code {process.returncode}.{suffix}"
         )
 
-    lineages: dict[int, set[str]] = {}
+    lineages: dict[int, set[int]] = {}
     for line in process.stdout.splitlines():
         fields = line.split("\t")
         try:
             taxid = int(fields[0])
+            lineages[taxid] = {
+                int(ancestor) for ancestor in fields[2].split(";") if ancestor
+            }
         except (IndexError, ValueError) as error:
             raise DatabaseBuildError(
                 "Could not read taxonkit lineage output; its layout changed."
             ) from error
-        if len(fields) < 2:
-            raise DatabaseBuildError(
-                "Could not read taxonkit lineage output; its layout changed."
-            )
-        lineages[taxid] = {
-            name.strip() for name in fields[1].split(";") if name.strip()
-        }
     if not lineages:
         raise DatabaseBuildError(
             "Could not read taxonkit lineage output; its layout changed."
