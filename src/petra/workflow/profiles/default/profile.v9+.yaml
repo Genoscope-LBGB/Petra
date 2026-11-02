@@ -28,7 +28,7 @@ set-resources:
     mem_mb: 10000
   pyrodigal:
     runtime: 720
-    mem_mb: 128000
+    mem_mb: 200000
   segmasker:
     runtime: 240
     mem_mb: 10000
@@ -37,7 +37,7 @@ set-resources:
     mem_mb: 10000
   cdhit:
     runtime: 720
-    mem_mb: 24000
+    mem_mb: 48000
   diamond:
     runtime: 1440
     mem_mb: 128000
@@ -52,7 +52,7 @@ set-resources:
     mem_mb: 10000
   whokaryote:
     runtime: 720
-    mem_mb: 32000
+    mem_mb: 200000
   extract_organelles:
     runtime: 60
     mem_mb: 10000
@@ -67,7 +67,7 @@ set-resources:
     mem_mb: 10000
   cmscan:
     runtime: 720
-    mem_mb: 32000
+    mem_mb: 120000
   merge_cmscan_tblout:
     runtime: 60
     mem_mb: 10000
@@ -76,10 +76,10 @@ set-resources:
     mem_mb: 20000
   blastn_ssu:
     runtime: 720
-    mem_mb: 32000
+    mem_mb: 120000
   blastn_lsu:
     runtime: 720
-    mem_mb: 32000
+    mem_mb: 120000
   select_rrna_best_hits:
     runtime: 60
     mem_mb: 10000

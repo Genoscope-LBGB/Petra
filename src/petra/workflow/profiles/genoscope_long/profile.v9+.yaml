@@ -42,7 +42,7 @@ set-resources:
     mem_mb: 10000
   cdhit:
     runtime: 1440
-    mem_mb: 24000
+    mem_mb: 48000
   diamond:
     mem_mb: 128000
     qos: long
@@ -57,7 +57,7 @@ set-resources:
     mem_mb: 20000
   whokaryote:
     runtime: 1440
-    mem_mb: 32000
+    mem_mb: 200000
   aggregate_taxonomy:
     runtime: 240
     mem_mb: 10000
@@ -75,7 +75,7 @@ set-resources:
     mem_mb: 10000
   cmscan:
     runtime: 1440
-    mem_mb: 32000
+    mem_mb: 80000
   merge_cmscan_tblout:
     runtime: 240
     mem_mb: 10000
@@ -83,10 +83,10 @@ set-resources:
     runtime: 240
     mem_mb: 20000
   blastn_ssu:
-    mem_mb: 32000
+    mem_mb: 12000
     qos: long
   blastn_lsu:
-    mem_mb: 32000
+    mem_mb: 12000
     qos: long
   select_rrna_best_hits:
     runtime: 240
@@ -99,7 +99,7 @@ set-resources:
     mem_mb: 10000
   trnascan:
     runtime: 1440
-    mem_mb: 64000
+    mem_mb: 100000
   filter_trna_predictions:
     runtime: 240
     mem_mb: 10000
