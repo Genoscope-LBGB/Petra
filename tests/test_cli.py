@@ -564,6 +564,62 @@ class RunCliTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         launch.assert_called_once()
 
+    def test_apptainer_mounts_inputs_and_needs_only_the_runtime(self) -> None:
+        reads_directory = self.directory / "reads"
+        reads_directory.mkdir()
+        reads = reads_directory / "reads.fastq"
+        reads.touch()
+        linked_database = self.directory / "linked-database"
+        linked_database.symlink_to(self.database)
+
+        def only_apptainer(executable: str) -> str | None:
+            return "/usr/bin/apptainer" if executable == "apptainer" else None
+
+        with (
+            patch("petra.cli.shutil.which", side_effect=only_apptainer),
+            patch(
+                "petra.taxonomy.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout="7711\tChordata\n"
+                ),
+            ) as taxonkit,
+            patch("petra.cli.launch_workflow", return_value=0) as launch,
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "run",
+                    "--assembly",
+                    str(self.assembly),
+                    "--database",
+                    str(linked_database),
+                    "--long-reads",
+                    str(reads),
+                    "--rrna",
+                    "--host-taxon",
+                    "7711",
+                    "--use-apptainer",
+                    "--container-image",
+                    "petra.sif",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        command = taxonkit.call_args.args[0]
+        self.assertEqual(command[:2], ["/usr/bin/apptainer", "exec"])
+        self.assertEqual(command[4:6], ["petra.sif", "taxonkit"])
+        binds = set(launch.call_args.kwargs["apptainer_binds"])
+        for directory in (
+            self.directory,
+            reads_directory,
+            linked_database,
+            self.database.resolve(),
+        ):
+            self.assertIn(directory, binds)
+        workflow_config = launch.call_args.kwargs["workflow_config"]
+        self.assertEqual(workflow_config["container_image"], "petra.sif")
+        self.assertEqual(workflow_config["host_phylum"], "Chordata")
+
 
 def _flatten(output: str) -> str:
     """Collapse the box drawing and line wrapping Rich applies to usage errors."""

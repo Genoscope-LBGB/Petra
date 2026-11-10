@@ -145,6 +145,7 @@ class WorkflowDagTest(unittest.TestCase):
             "ssu_database": str(self.ssu_database),
             "lsu_database": str(self.lsu_database),
             "taxonomy": str(self.taxonomy),
+            "container_image": "docker://example.org/petra:test",
         }
         config_path = self.directory / (
             f"config-{rrna}-{trna}-{skip_taxonomic_assignment}.yaml"
