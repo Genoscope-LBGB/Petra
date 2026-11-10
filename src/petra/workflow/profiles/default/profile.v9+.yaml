@@ -2,6 +2,10 @@ executor: slurm
 jobs: 100
 cores: 4000
 latency-wait: 70
+# Space status-query retries (~8 min tolerance, below MinJobAge=600s): the slurm
+# plugin drops all active jobs when every attempt of a cycle fails, hanging the run.
+slurm-status-attempts: 50
+max-status-checks-per-second: 0.1
 
 set-threads:
   pyrodigal: 12
