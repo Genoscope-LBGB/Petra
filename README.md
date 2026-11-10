@@ -18,7 +18,7 @@ needs `tRNAscan-SE`.
 ### With a container
 
 `petra run --use-apptainer` runs every job in the PETRA image with Apptainer
-(or Singularity), so only `apptainer` and PETRA itself are needed on the host:
+(or Singularity), so only `apptainer` / `singularity` and PETRA itself are needed on the host:
 
 ```console
 petra run --use-apptainer \
@@ -28,17 +28,11 @@ petra run --use-apptainer \
   --output run-1
 ```
 
-The image holds the tools, not the databases. PETRA mounts the directories of
-the assembly, each read file, the `--database` directory (which also holds the
-taxonomy used by taxonkit) and `--summary-colors`, at the same paths and
-following symlinks. The default image is
-`docker://ghcr.io/cea-lbgb/petra:<version>`; `--container-image` points to
-another URI or a local `.sif`. Snakemake caches the image in the output
-directory, so pass `-- --apptainer-prefix DIR` to share one copy across runs.
-
-Build the image from the repository with `docker build -t petra .`. The
-databases can be built with the same image:
-`apptainer exec -B "$PWD" petra.sif petra build-db --output database`.
+The databases can be built with these commands:
+```
+apptainer pull petra.sif docker://ghcr.io/cea-lbgb/petra:0.1.0
+apptainer exec -B "$PWD" petra.sif petra build-db --output database
+```
 
 ## Quick start
 
