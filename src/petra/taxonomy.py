@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 _MISSING_PHYLUM = "N/A"
@@ -26,22 +27,23 @@ def resolve_host_phylum(
     value: str,
     *,
     taxonomy: Path,
-    taxonkit_executable: str = "taxonkit",
+    taxonkit_command: Sequence[str] = ("taxonkit",),
 ) -> str | None:
     """Resolve a host identifier to its NCBI phylum, or None if it has none.
 
     A TaxID costs one taxonkit call; a scientific name costs one additional
-    call to resolve the name to a TaxID.
+    call to resolve the name to a TaxID. ``taxonkit_command`` may prefix
+    taxonkit with a container launcher.
     """
     query = value.strip()
     taxid = (
         query
         if query.isdigit()
-        else _resolve_name(query, taxonkit_executable, taxonomy)
+        else _resolve_name(query, taxonkit_command, taxonomy)
     )
 
     output = _run_taxonkit(
-        taxonkit_executable,
+        taxonkit_command,
         _PHYLUM_ARGUMENTS,
         data_dir=taxonomy,
         input_text=f"{taxid}\n",
@@ -66,9 +68,11 @@ def resolve_host_phylum(
     return phylum
 
 
-def _resolve_name(value: str, taxonkit_executable: str, taxonomy: Path) -> str:
+def _resolve_name(
+    value: str, taxonkit_command: Sequence[str], taxonomy: Path
+) -> str:
     output = _run_taxonkit(
-        taxonkit_executable,
+        taxonkit_command,
         ["name2taxid"],
         data_dir=taxonomy,
         input_text=f"{value}\n",
@@ -92,7 +96,7 @@ def _resolve_name(value: str, taxonkit_executable: str, taxonomy: Path) -> str:
 
 
 def _run_taxonkit(
-    executable: str,
+    command: Sequence[str],
     arguments: list[str],
     *,
     data_dir: Path,
@@ -100,7 +104,7 @@ def _run_taxonkit(
 ) -> str:
     try:
         process = subprocess.run(
-            [executable, "--data-dir", str(data_dir), *arguments],
+            [*command, "--data-dir", str(data_dir), *arguments],
             input=input_text,
             capture_output=True,
             text=True,

@@ -15,6 +15,25 @@ pip install .
 `cmpress`), BLAST (`blastn`, `makeblastdb`) and `taxonkit`, the tRNA analysis
 needs `tRNAscan-SE`.
 
+### With a container
+
+`petra run --use-apptainer` runs every job in the PETRA image with Apptainer
+(or Singularity), so only `apptainer` / `singularity` and PETRA itself are needed on the host:
+
+```console
+petra run --use-apptainer \
+  --assembly assembly.fasta \
+  --database database \
+  --long-reads reads.fastq.gz \
+  --output run-1
+```
+
+The databases can be built with these commands:
+```
+apptainer pull petra.sif docker://ghcr.io/cea-lbgb/petra:0.1.0
+apptainer exec -B "$PWD" petra.sif petra build-db --output database
+```
+
 ## Quick start
 
 ```console

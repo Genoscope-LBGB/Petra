@@ -26,13 +26,20 @@ from .database import (
     install_taxonomy_database,
     validate_taxonomy_directory,
 )
-from .launcher import LauncherError, launch_workflow, profile_summaries
+from .launcher import (
+    LauncherError,
+    apptainer_bind_option,
+    launch_workflow,
+    profile_summaries,
+)
 from .taxonomy import HostTaxonError, resolve_host_phylum
 
 _HELP_CONTEXT = {"help_option_names": ["-h", "--help"]}
 _RUN_CONTEXT = {**_HELP_CONTEXT, "allow_extra_args": True}
 _RRNA_CHUNKS = 4
-_THEMES_DIRECTORY = Path(__file__).resolve().parent / "themes"
+_PACKAGE_DIRECTORY = Path(__file__).resolve().parent
+_THEMES_DIRECTORY = _PACKAGE_DIRECTORY / "themes"
+_CONTAINER_REPOSITORY = "docker://ghcr.io/cea-lbgb/petra"
 
 
 class SequencingTechnology(str, Enum):
@@ -55,6 +62,34 @@ SummaryTheme = Enum(
     {path.stem: path.stem for path in sorted(_THEMES_DIRECTORY.glob("*.tsv"))},
     type=str,
 )
+
+
+def _petra_version() -> str:
+    try:
+        return version("petra")
+    except PackageNotFoundError:
+        return "0+unknown"
+
+
+def _apptainer_executable() -> str:
+    for executable in ("apptainer", "singularity"):
+        path = shutil.which(executable)
+        if path is not None:
+            return path
+    raise LauncherError("--use-apptainer needs apptainer or singularity on PATH.")
+
+
+def _mount_points(paths: list[Path]) -> list[Path]:
+    """Directories to bind so every path, and the target of any symlink, resolves.
+
+    Directories are mounted as is, files through their parent directory.
+    """
+    mounts: list[Path] = []
+    for path in paths:
+        absolute = path.expanduser().absolute()
+        for candidate in (absolute, absolute.resolve()):
+            mounts.append(candidate if candidate.is_dir() else candidate.parent)
+    return mounts
 
 
 def _require_executables(
@@ -122,11 +157,7 @@ def _configure_logging() -> None:
 
 def _version_callback(value: bool) -> None:
     if value:
-        try:
-            workflow_version = version("petra")
-        except PackageNotFoundError:
-            workflow_version = "0+unknown"
-        typer.echo(workflow_version)
+        typer.echo(_petra_version())
         raise typer.Exit()
 
 
@@ -435,6 +466,29 @@ def run(
             rich_help_panel="Execution",
         ),
     ] = Path("petra_output"),
+    use_apptainer: Annotated[
+        bool,
+        typer.Option(
+            "--use-apptainer",
+            help=(
+                "Run every job in the PETRA container with Apptainer or "
+                "Singularity. Only apptainer is needed on the host."
+            ),
+            rich_help_panel="Execution",
+        ),
+    ] = False,
+    container_image: Annotated[
+        str | None,
+        typer.Option(
+            "--container-image",
+            help=(
+                "Image used with --use-apptainer: a local .sif file or any URI "
+                "Apptainer accepts. Defaults to "
+                f"{_CONTAINER_REPOSITORY}:<petra version>."
+            ),
+            rich_help_panel="Execution",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -454,6 +508,11 @@ def run(
     ] = "slurm",
 ) -> None:
     """Run the workflow unless Snakemake targets are passed after '--'."""
+    if container_image is not None and not use_apptainer:
+        raise typer.BadParameter(
+            "--container-image requires --use-apptainer.",
+            param_hint="--container-image",
+        )
     if host_taxon is not None and not rrna:
         raise typer.BadParameter(
             "--host-taxon requires --rrna.",
@@ -516,20 +575,41 @@ def run(
                 f"{error} Build it with 'petra build-db --output {database}'.",
                 param_hint="--database",
             ) from error
+    image = container_image or f"{_CONTAINER_REPOSITORY}:{_petra_version()}"
     try:
-        # taxonkit resolves the host phylum, so PATH is checked first to report a
-        # missing tool as such instead of as a resolution failure.
-        _require_executables(
-            rrna=rrna,
-            trna=trna,
-            skip_taxonomic_assignment=skip_taxonomic_assignment,
-        )
+        if use_apptainer:
+            # Tools come from the container and the taxonomy from the mounted
+            # database directory, so only the container runtime is needed.
+            taxonkit_command = [
+                _apptainer_executable(),
+                "exec",
+                "--bind",
+                apptainer_bind_option(_mount_points([taxonomy])),
+                image,
+                "taxonkit",
+            ]
+        else:
+            # taxonkit resolves the host phylum, so PATH is checked first to
+            # report a missing tool as such instead of as a resolution failure.
+            _require_executables(
+                rrna=rrna,
+                trna=trna,
+                skip_taxonomic_assignment=skip_taxonomic_assignment,
+            )
+            taxonkit_command = ["taxonkit"]
         host_phylum = (
-            resolve_host_phylum(host_taxon, taxonomy=taxonomy)
+            resolve_host_phylum(
+                host_taxon, taxonomy=taxonomy, taxonkit_command=taxonkit_command
+            )
             if host_taxon is not None
             else None
         )
         database_path = database if database is not None else Path()
+        summary_colors_path = (
+            _THEMES_DIRECTORY / f"{summary_theme.value}.tsv"
+            if summary_theme is not None
+            else summary_colors
+        )
         workflow_config = {
             "assembly": assembly,
             "diamond_db": database_path / DIAMOND_DATABASE_FILENAME,
@@ -544,11 +624,7 @@ def run(
             "unigene_support_length": unigene_support_length,
             "unigenes_per_decade": unigenes_per_decade,
             "summary_font_size": summary_font_size,
-            "summary_colors": (
-                _THEMES_DIRECTORY / f"{summary_theme.value}.tsv"
-                if summary_theme is not None
-                else summary_colors
-            ),
+            "summary_colors": summary_colors_path,
             "summary_disabled_panels": [
                 panel.value for panel in summary_disable_panel or ()
             ],
@@ -566,7 +642,21 @@ def run(
             "ssu_database": database_path / SSU_DATABASE_FILENAME,
             "lsu_database": database_path / LSU_DATABASE_FILENAME,
             "taxonomy": taxonomy,
+            "container_image": image,
         }
+        apptainer_binds = None
+        if use_apptainer:
+            # The package directory holds the workflow scripts Snakemake runs
+            # in the container and the bundled summary themes.
+            apptainer_binds = _mount_points(
+                [
+                    _PACKAGE_DIRECTORY,
+                    assembly,
+                    *(long_reads or []),
+                    *([database] if database is not None else []),
+                    *([summary_colors_path] if summary_colors_path else []),
+                ]
+            )
         exit_code = launch_workflow(
             distribution_name="petra",
             output=output,
@@ -574,6 +664,7 @@ def run(
             profile=profile,
             executor=executor,
             passthrough=context.args,
+            apptainer_binds=apptainer_binds,
             console=console,
         )
     except (HostTaxonError, LauncherError) as error:

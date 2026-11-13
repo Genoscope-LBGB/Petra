@@ -139,8 +139,10 @@ def launch_workflow(
     profile: str | None,
     executor: str | None,
     passthrough: Sequence[str],
+    apptainer_binds: Sequence[Path] | None = None,
     console: Console | None = None,
 ) -> int:
+    """Launch Snakemake; ``apptainer_binds`` runs every job in the container."""
     invocation_directory = Path.cwd().resolve()
     output_directory = output.expanduser()
     if not output_directory.is_absolute():
@@ -207,6 +209,10 @@ def launch_workflow(
         profile=selected_profile,
         executor=executor,
     )
+    if apptainer_binds is not None:
+        wrapper_arguments.extend(
+            apptainer_arguments([*apptainer_binds, output_directory])
+        )
     print(f"Snakemake command: {shlex.join(wrapper_arguments)}")
 
     try:
@@ -403,6 +409,31 @@ def _snakemake_executable() -> str:
         return executable
     sibling = Path(sys.executable).parent / "snakemake"
     return str(sibling) if sibling.is_file() else "snakemake"
+
+
+def apptainer_bind_option(paths: Sequence[Path]) -> str:
+    """Bind each directory at the same path inside the container.
+
+    Apptainer splits bind specifications on ',' and ':' without any escape, so
+    paths holding either character cannot be mounted.
+    """
+    unique = list(dict.fromkeys(str(path) for path in paths))
+    unsupported = [path for path in unique if "," in path or ":" in path]
+    if unsupported:
+        raise LauncherError(
+            "Apptainer cannot mount paths containing ',' or ':': "
+            f"{', '.join(unsupported)}."
+        )
+    return ",".join(unique)
+
+
+def apptainer_arguments(paths: Sequence[Path]) -> list[str]:
+    return [
+        "--software-deployment-method",
+        "apptainer",
+        "--apptainer-args",
+        f"--bind {apptainer_bind_option(paths)}",
+    ]
 
 
 def _wrapper_arguments(

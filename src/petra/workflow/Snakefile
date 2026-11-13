@@ -1,3 +1,8 @@
+# Every job runs in this image when Snakemake is given
+# --software-deployment-method apptainer, which `petra run --use-apptainer` adds.
+container: config["container_image"]
+
+
 include: "rules/gene_prediction.smk"
 include: "rules/diamond.smk"
 include: "rules/rrna.smk"
