@@ -103,15 +103,24 @@ class ColorGroupTest(unittest.TestCase):
 
             self.assertEqual(_group_of(sequences[2], {"Chordata": "#111111"}), "N/A")
 
-    def test_atlasea_colors_eukaryotes_without_a_listed_phylum_as_eukaryota(
-        self,
-    ) -> None:
+    def test_atlasea_colors_eukaryotes_by_phylum_then_kingdom(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             sequences = _read_sequences(_taxonomy(directory))
             color_map = _read_color_map(theme_colors("atlasea"))
 
             self.assertEqual(_group_of(sequences[0], color_map), "Chordata")
+            self.assertEqual(_group_of(sequences[1], color_map), "Metazoa")
+
+    def test_atlasea_colors_eukaryotes_without_a_listed_kingdom_as_eukaryota(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            sequences = _read_sequences(_taxonomy(directory))
+            color_map = _read_color_map(theme_colors("atlasea"))
+            del color_map["Metazoa"]
+
             self.assertEqual(_group_of(sequences[1], color_map), "Eukaryota")
 
 

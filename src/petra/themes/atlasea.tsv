@@ -1,5 +1,8 @@
 # ATLASea theme: one color per eukaryotic phylum commonly met in ATLASea samples,
 # plus Dinophyceae and Phaeophyceae, which have no phylum in the NCBI taxonomy.
+# The kingdoms holding the listed phyla (Metazoa, Fungi, Viridiplantae) color
+# contigs resolved to a kingdom but not to a phylum, so an animal contig of
+# unknown phylum stands apart from an unresolved eukaryote.
 # Every superkingdom keeps its default color, so eukaryotes outside the listed
 # taxa stay red. Colors were picked to be as
 # far apart as possible in the CAM02-UCS color space, the most distinct ones
@@ -34,4 +37,7 @@ Cercozoa	#FF8543
 Oomycota	#C300B9
 Ascomycota	#B185B1
 Basidiomycota	#4BB400
+Metazoa	#5A5A3C
+Fungi	#870F69
+Viridiplantae	#B4D2E1
 Eukaryota	#FF0000
