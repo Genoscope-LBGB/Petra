@@ -1,4 +1,4 @@
-"""Render the PETRA summary graph from the final taxonomy table."""
+"""Render the Petra summary graph from the final taxonomy table."""
 
 import argparse
 import csv
@@ -894,7 +894,7 @@ def plot_summary_graph(
     width: float = 16.5,
     height: float = 9.6,
     dpi: int = 130,
-    title: str = "PETRA summary graph",
+    title: str = "Petra summary graph",
 ) -> None:
     disabled = tuple(disabled_panels)
     unknown = [panel for panel in disabled if panel not in PANELS]
@@ -1126,7 +1126,7 @@ def _parse_arguments(argv: SequenceABC[str] | None = None) -> argparse.Namespace
         "--taxonomy",
         type=Path,
         required=True,
-        help="Final PETRA taxonomy table (predictions.final.tsv).",
+        help="Final Petra taxonomy table (predictions.final.tsv).",
     )
     parser.add_argument(
         "-o",
@@ -1168,7 +1168,7 @@ def _parse_arguments(argv: SequenceABC[str] | None = None) -> argparse.Namespace
     )
     parser.add_argument("--dpi", type=int, default=130, help="Figure resolution.")
     parser.add_argument(
-        "--title", default="PETRA summary graph", help="Title shown in the header."
+        "--title", default="Petra summary graph", help="Title shown in the header."
     )
     return parser.parse_args(argv)
 

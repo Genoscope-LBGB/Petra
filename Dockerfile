@@ -1,4 +1,4 @@
-# Workflow tools and PETRA itself. Databases, including the NCBI taxonomy used
+# Workflow tools and Petra itself. Databases, including the NCBI taxonomy used
 # by taxonkit, are not part of the image: `petra run --use-apptainer` mounts the
 # database directory built by `petra build-db`.
 FROM mambaorg/micromamba:1.5-jammy
@@ -18,7 +18,7 @@ RUN micromamba install -y -n base -c conda-forge -c bioconda \
     trnascan-se \
     && micromamba clean --all --yes
 
-# Whokaryote pins Python 3.8, below what PETRA needs, so it gets its own
+# Whokaryote pins Python 3.8, below what Petra needs, so it gets its own
 # environment. The wrapper puts that environment first on PATH so Whokaryote
 # finds its own Tiara and Prodigal.
 RUN micromamba create -y -n whokaryote -c conda-forge -c bioconda whokaryote \

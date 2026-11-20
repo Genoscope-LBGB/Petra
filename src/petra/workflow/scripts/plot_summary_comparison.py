@@ -1,4 +1,4 @@
-"""Compose one blobplot per PETRA run so assignments can be compared side by side.
+"""Compose one blobplot per Petra run so assignments can be compared side by side.
 
 Panels share the taxon palette and one legend; every axis, marker scale and
 cumulative-length unit stays per run, because assemblies being compared rarely
@@ -75,7 +75,7 @@ _FALLBACK_THEME = "superkingdom"
 
 @dataclass(frozen=True)
 class ComparedRun:
-    """One PETRA run to draw as a panel."""
+    """One Petra run to draw as a panel."""
 
     name: str
     source: Path
@@ -106,7 +106,7 @@ def _taxonomy_file(path: Path) -> Path:
     source = path / _TAXONOMY_FILE if path.is_dir() else path
     if not source.is_file():
         raise ValueError(
-            f"{path} does not hold {_TAXONOMY_FILE}: pass a PETRA output directory "
+            f"{path} does not hold {_TAXONOMY_FILE}: pass a Petra output directory "
             "or the table itself."
         )
     return source
@@ -459,7 +459,7 @@ def _parse_arguments(argv: SequenceABC[str] | None = None) -> argparse.Namespace
         type=Path,
         metavar="DIRECTORY",
         help=(
-            f"PETRA output directory holding {_TAXONOMY_FILE}, or the table itself; "
+            f"Petra output directory holding {_TAXONOMY_FILE}, or the table itself; "
             "repeat once per run to compare."
         ),
     )

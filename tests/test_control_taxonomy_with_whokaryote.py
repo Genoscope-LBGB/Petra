@@ -111,7 +111,7 @@ class ControlTaxonomyWithWhokaryoteTest(unittest.TestCase):
             self._write_raw(raw_taxonomy, [self._raw_row("contig", "1", "Other")])
             predictions.write_text("contig\tpredicted\n", encoding="utf-8")
 
-            with self.assertRaisesRegex(ValueError, "Unexpected PETRA domain"):
+            with self.assertRaisesRegex(ValueError, "Unexpected Petra domain"):
                 control_taxonomy(
                     raw_taxonomy, predictions, directory / "controlled.tsv"
                 )

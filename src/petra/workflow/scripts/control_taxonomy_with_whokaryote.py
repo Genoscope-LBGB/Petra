@@ -104,7 +104,7 @@ def control_taxonomy(
                     petra_class = _PETRA_CLASSES[domain]
                 except KeyError as error:
                     raise ValueError(
-                        f"Unexpected PETRA domain {domain!r} for sequence "
+                        f"Unexpected Petra domain {domain!r} for sequence "
                         f"{sequence_id!r} at line {line_number} in {raw_taxonomy}."
                     ) from error
 
