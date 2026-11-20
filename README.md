@@ -1,6 +1,6 @@
-# PETRA
+# Petra
 
-PETRA (Predicted protein-enabled Taxonomic Rank Assignment) finds contaminants
+Petra (Predicted protein-enabled Taxonomic Rank Assignment) finds contaminants
 in genome assemblies. It predicts genes on each contig, aligns them to a protein
 database with DIAMOND, and assigns the contig to a taxon when most of its genes
 agree. Contigs are then split by domain so the host genome can be kept apart.
@@ -17,8 +17,8 @@ needs `tRNAscan-SE`.
 
 ### With a container
 
-`petra run --use-apptainer` runs every job in the PETRA image with Apptainer
-(or Singularity), so only `apptainer` / `singularity` and PETRA itself are needed on the host:
+`petra run --use-apptainer` runs every job in the Petra image with Apptainer
+(or Singularity), so only `apptainer` / `singularity` and Petra itself are needed on the host:
 
 ```console
 petra run --use-apptainer \
@@ -56,11 +56,11 @@ Set `PETRA_DB_DIR` to skip giving `--database` on every run.
 
 ## How contigs are assigned
 
-A contig needs enough aligned genes before PETRA will judge it: 3 up to 50 kb,
+A contig needs enough aligned genes before Petra will judge it: 3 up to 50 kb,
 then a few more for each tenfold increase in length (4 at 100 kb, 9 at 5 Mb).
 Contigs below that are left unassigned (`insufficient_support`).
 
-PETRA then votes rank by rank, from domain down. A taxon wins a rank when it
+Petra then votes rank by rank, from domain down. A taxon wins a rank when it
 holds more than half of the genes (`--alpha`, default 0.5), and only genes that
 agreed on the ranks above take part in the next vote. If nothing wins, the
 contig is unassigned (`no_consensus`).
