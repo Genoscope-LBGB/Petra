@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "petra"
 version = "0.1.0"
-description = "PETRA - Predicted protein-enabled Taxonomic Rank Assignment"
+description = "Petra - Predicted protein-enabled Taxonomic Rank Assignment"
 readme = "README.md"
 requires-python = ">=3.11"
 
