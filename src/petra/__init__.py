@@ -1,1 +1,1 @@
-"""PETRA - Predicted protein-enabled Taxonomic Rank Assignment"""
+"""Petra - Predicted protein-enabled Taxonomic Rank Assignment"""

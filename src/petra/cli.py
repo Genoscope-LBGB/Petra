@@ -132,7 +132,7 @@ def _validate_alpha(value: float) -> float:
 
 
 app = typer.Typer(
-    help="PETRA - Predicted protein-enabled Taxonomic Rank Assignment",
+    help="Petra - Predicted protein-enabled Taxonomic Rank Assignment",
     context_settings=_HELP_CONTEXT,
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
@@ -173,7 +173,7 @@ def main(
         ),
     ] = None,
 ) -> None:
-    """PETRA - Predicted protein-enabled Taxonomic Rank Assignment"""
+    """Petra - Predicted protein-enabled Taxonomic Rank Assignment"""
     _configure_logging()
 
 
@@ -365,7 +365,7 @@ def run(
         typer.Option(
             "--host-taxon",
             help=(
-                "Expected host taxon, as an NCBI scientific name or TaxID. PETRA "
+                "Expected host taxon, as an NCBI scientific name or TaxID. Petra "
                 "resolves its phylum and flags rRNA hits outside that phylum. "
                 "If no phylum is available, reports non_host=- and writes "
                 "rna/predictions.rrna.warnings.txt."
@@ -471,7 +471,7 @@ def run(
         typer.Option(
             "--use-apptainer",
             help=(
-                "Run every job in the PETRA container with Apptainer or "
+                "Run every job in the Petra container with Apptainer or "
                 "Singularity. Only apptainer is needed on the host."
             ),
             rich_help_panel="Execution",
@@ -763,7 +763,7 @@ def build_db(
         ),
     ] = False,
 ) -> None:
-    """Build PETRA databases with their matching NCBI taxonomy data."""
+    """Build Petra databases with their matching NCBI taxonomy data."""
     if skip_diamond_db and not build_rna_dbs:
         raise typer.BadParameter(
             "--skip-diamond-db leaves nothing to build. Add --build-rna-dbs.",

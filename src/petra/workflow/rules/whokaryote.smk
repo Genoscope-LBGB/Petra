@@ -50,7 +50,7 @@ rule extract_organelles:
 
 
 rule control_taxonomy_with_whokaryote:
-    """Report PETRA assignments that disagree with Whokaryote."""
+    """Report Petra assignments that disagree with Whokaryote."""
     input:
         raw_taxonomy="predictions.taxonomy.raw.tsv",
         whokaryote_predictions="predictions.whokaryote.tsv",
@@ -82,7 +82,7 @@ rule aggregate_taxonomy:
 
 
 rule split_assembly_by_domain:
-    """Split assembly sequences into FASTA files by final PETRA domain.
+    """Split assembly sequences into FASTA files by final Petra domain.
 
     The final FASTA keeps the Eukaryota and unassigned sequences.
     """

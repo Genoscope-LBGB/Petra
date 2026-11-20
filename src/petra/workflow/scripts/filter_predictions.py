@@ -1,4 +1,4 @@
-"""Keep the sequences of a PETRA prediction table that satisfy an expression.
+"""Keep the sequences of a Petra prediction table that satisfy an expression.
 
 The expression is one quoted argument holding conditions on the columns of the
 table, joined by and, or, not and parentheses:
